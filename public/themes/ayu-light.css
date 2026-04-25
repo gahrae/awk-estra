@@ -1,0 +1,41 @@
+/* name: Ayu Light */
+[data-theme="ayu-light"] {
+  --bg: #fafafa;
+  --panel: #f3f3f3;
+  --panel-2: #e7eaed;
+  --border: #c7c7c7;
+  --text: #5c6166;
+  --muted: #8a9199;
+  --accent: #399ee6;
+  --accent-dim: #b3daef;
+  --danger: #e65050;
+  --btn-bg: #f3f3f3;
+  --btn-bg-hover: #e7eaed;
+  --tok-keyword: #fa8d3e;
+  --tok-builtin: #55b4d4;
+  --tok-var: #86b300;
+  --tok-field: #f07171;
+  --tok-string: #86b300;
+  --tok-regex: #fa8d3e;
+  --tok-comment: #787b80;
+  --tok-number: #a37acc;
+
+  --selection-bg: rgba(57, 158, 230, 0.24);
+  --primary-btn-text: #0b1a0f;
+  --banner-bg: #fde5e0;
+  --banner-text: #82181e;
+  --banner-link-hover: var(--danger);
+  --banner-strong-text: var(--danger);
+  --cp-field-0: rgba(57, 158, 230, 0.08);
+  --cp-field-1: rgba(250, 141, 62, 0.10);
+  --cp-field-2: rgba(134, 179, 0, 0.10);
+  --cp-field-3: rgba(240, 113, 113, 0.10);
+  --cp-field-4: rgba(163, 122, 204, 0.10);
+  --cp-field-5: rgba(85, 180, 212, 0.10);
+  --fp-field-0: rgba(57, 158, 230, 0.14);
+  --fp-field-1: rgba(250, 141, 62, 0.16);
+  --fp-field-2: rgba(134, 179, 0, 0.16);
+  --fp-field-3: rgba(240, 113, 113, 0.16);
+  --fp-field-4: rgba(163, 122, 204, 0.16);
+  --fp-field-5: rgba(85, 180, 212, 0.16);
+}

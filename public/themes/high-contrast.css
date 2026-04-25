@@ -1,0 +1,27 @@
+/* name: High Contrast */
+/* Maximum-contrast theme for low-vision use: pure black background,
+   pure white text + borders, bright primary colours for token syntax.
+   Accent is yellow because it's the highest-contrast chromatic
+   colour on black; every token colour is pushed toward full
+   saturation for readability rather than aesthetics. */
+[data-theme="high-contrast"] {
+  --bg: #000000;
+  --panel: #0a0a0a;
+  --panel-2: #1a1a1a;
+  --border: #ffffff;
+  --text: #ffffff;
+  --muted: #cccccc;
+  --accent: #ffff00;
+  --accent-dim: #808000;
+  --danger: #ff5555;
+  --btn-bg: #0a0a0a;
+  --btn-bg-hover: #333333;
+  --tok-keyword: #ff66ff;
+  --tok-builtin: #66ffff;
+  --tok-var: #66ff66;
+  --tok-field: #ffff66;
+  --tok-string: #ffaa66;
+  --tok-regex: #ff9999;
+  --tok-comment: #aaaaaa;
+  --tok-number: #ccff66;
+}

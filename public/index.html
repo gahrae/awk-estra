@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Awk-estra</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/themes.css">
+</head>
+<body>
+  <div id="unsafe-mode-banner" class="unsafe-mode-banner" role="alert" hidden>
+    <span class="unsafe-mode-banner-text"><strong>Unsafe mode: awk sandbox disabled.</strong> Programs can run shell commands, write/overwrite files, and access the network. Preview mode executes incrementally as you type, so each keystroke may run — avoid destructive patterns (<code>rm</code>, <code>dd</code>, <code>mkfs</code>, <code>&gt; /dev/…</code>). Block risky patterns in <button type="button" id="unsafe-mode-banner-link" class="unsafe-mode-banner-link">Settings → Safety</button>.</span>
+    <button type="button" id="unsafe-mode-banner-close" class="unsafe-mode-banner-close" aria-label="Dismiss unsafe-mode warning" title="Dismiss for this session">×</button>
+  </div>
+  <header>
+    <h1 title="Turn solos into symphonies.">Awk-estra</h1>
+    <div class="header-actions">
+      <button id="input-mode-btn" type="button" title="Input source for awk runs" aria-label="Toggle input source" aria-pressed="false">▭ Input: Current Tab</button>
+      <button id="wrap-btn" title="Toggle word wrap for this tab" aria-label="Toggle word wrap">↩ Wrap</button>
+      <button id="line-num-btn" title="Toggle line numbers" aria-label="Toggle line numbers"># Lines</button>
+      <button id="save-tab-btn" title="Download the active tab as a file" aria-label="Download tab as file">↓ Save</button>
+      <button id="help-btn" title="Show welcome guide" aria-label="Show welcome guide">?</button>
+      <button id="settings-btn" title="Settings" aria-label="Settings">⚙</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <div class="sidebar-head">
+        <button id="sidebar-collapse-btn" type="button" title="Hide sidebar" aria-label="Hide sidebar">◀</button>
+      </div>
+      <div id="sidebar-search-row" class="filter-field">
+        <input id="sidebar-search" type="text" placeholder="Filter all sections…" autocomplete="off" spellcheck="false">
+        <button type="button" class="filter-clear" aria-label="Clear filter" title="Clear filter">×</button>
+      </div>
+      <div id="sidebar-search-scope" class="sidebar-search-scope">
+        <span class="sidebar-search-scope-label muted">Search:</span>
+        <button type="button" id="sidebar-search-scope-name" class="sidebar-scope-toggle" aria-pressed="true" title="Match against snippet / chain / template names and descriptions">Name</button>
+        <button type="button" id="sidebar-search-scope-content" class="sidebar-scope-toggle" aria-pressed="true" title="Match against snippet program / template body / text snippet content (3+ chars)">Content</button>
+        <button type="button" id="sidebar-search-scope-tags" class="sidebar-scope-toggle" aria-pressed="true" title="Match against tags">Tags</button>
+        <span class="sidebar-search-scope-label muted">Filter:</span>
+        <button type="button" id="sidebar-filter-failing" class="sidebar-scope-toggle" aria-pressed="false" title="Show only items with failing tests">Failing</button>
+      </div>
+
+      <section data-section="snippets">
+        <div class="section-head">
+          <span class="caret">▼</span>
+          <h2>Snippets<span class="section-count muted" data-section-count="snippets"></span></h2>
+          <button id="snippets-bulk-groups" title="Collapse all tag groups (click to toggle)" aria-label="Toggle all tag groups" hidden>⊟</button>
+          <button id="snippets-sort-mode" class="sort-mode-btn" title="Sort: Tag groups (click to cycle T → A-Z → Z-A)" aria-label="Sort mode">T</button>
+          <button id="snippets-run-all-tests" title="Run all snippet tests" aria-label="Run all snippet tests" hidden>▶</button>
+          <button id="restore-snippets" title="Restore default snippets (adds any missing by name; leaves your own untouched)" aria-label="Restore default snippets" hidden>↻</button>
+          <button id="new-snippet" title="New snippet" aria-label="New snippet">+</button>
+        </div>
+        <div id="snippets"></div>
+      </section>
+
+      <section data-section="chains">
+        <div class="section-head">
+          <span class="caret">▼</span>
+          <h2>Chains<span class="section-count muted" data-section-count="chains"></span></h2>
+          <button id="chains-bulk-groups" title="Collapse all tag groups (click to toggle)" aria-label="Toggle all tag groups" hidden>⊟</button>
+          <button id="chains-sort-mode" class="sort-mode-btn" title="Sort: Tag groups (click to cycle T → A-Z → Z-A)" aria-label="Sort mode">T</button>
+          <button id="chains-run-all-tests" title="Run all chain tests" aria-label="Run all chain tests" hidden>▶</button>
+          <button id="restore-chains" title="Restore default chains (adds any missing by name; leaves your own untouched; skips any chain whose required snippets are missing)" aria-label="Restore default chains" hidden>↻</button>
+          <button id="new-chain" title="New chain" aria-label="New chain">+</button>
+        </div>
+        <div id="chains"></div>
+      </section>
+
+      <section data-section="templates">
+        <div class="section-head">
+          <span class="caret">▼</span>
+          <h2>Templates<span class="section-count muted" data-section-count="templates"></span></h2>
+          <button id="templates-bulk-groups" title="Collapse all tag groups (click to toggle)" aria-label="Toggle all tag groups" hidden>⊟</button>
+          <button id="templates-sort-mode" class="sort-mode-btn" title="Sort: Tag groups (click to cycle T → A-Z → Z-A)" aria-label="Sort mode">T</button>
+          <button id="restore-templates" title="Restore default templates (adds any missing by name; leaves your own untouched)" aria-label="Restore default templates" hidden>↻</button>
+          <button id="new-template" title="New template" aria-label="New template">+</button>
+        </div>
+        <div id="templates"></div>
+      </section>
+
+      <section data-section="text-snippets">
+        <div class="section-head">
+          <span class="caret">▼</span>
+          <h2>Text Snippets</h2>
+          <button id="restore-text-snippets" title="Restore default text snippets (adds any missing by name; leaves your own untouched)" aria-label="Restore default text snippets" hidden>↻</button>
+          <button id="new-text-snippet" title="Save current editor content as a text snippet" aria-label="New text snippet">+</button>
+        </div>
+        <ul id="text-snippets"></ul>
+      </section>
+
+      <section class="io-row">
+        <button id="export">Export</button>
+        <button id="import">Import</button>
+      </section>
+
+      <section class="legend">
+        <div>Click a snippet/chain to run on selection.</div>
+        <div>Hover for row actions.</div>
+      </section>
+    </aside>
+
+    <div id="resizer" title="Drag to resize"></div>
+
+    <div id="editor-area">
+      <button id="sidebar-show-btn" type="button" title="Show sidebar" aria-label="Show sidebar">▶</button>
+      <div id="tabs"></div>
+      <div id="find-panel" class="hidden" aria-hidden="true">
+        <input id="find-input" type="text" placeholder="Find" autocomplete="off" spellcheck="false">
+        <input id="replace-input" type="text" placeholder="Replace" autocomplete="off" spellcheck="false">
+        <label class="find-opt" title="Case sensitive"><input type="checkbox" id="find-case"><span>Aa</span></label>
+        <label class="find-opt" title="Regular expression"><input type="checkbox" id="find-regex"><span>.*</span></label>
+        <span id="find-count"></span>
+        <button type="button" id="find-prev" title="Previous (Shift+Enter)">↑</button>
+        <button type="button" id="find-next" title="Next (Enter)">↓</button>
+        <button type="button" id="find-replace" title="Replace current">Replace</button>
+        <button type="button" id="find-replace-all" title="Replace all">All</button>
+        <button type="button" id="find-close" title="Close (Esc)">×</button>
+      </div>
+      <div id="editor-with-gutter">
+        <pre id="line-numbers" aria-hidden="true" hidden></pre>
+        <textarea id="editor" spellcheck="false" placeholder="Paste or type your text here..."></textarea>
+      </div>
+
+      <div id="pipeline">
+        <div class="pipeline-head">
+          <button id="pipeline-collapse" title="Collapse / expand" class="pipeline-collapse">▾</button>
+          <span class="label">Pipeline</span>
+          <button id="clear-pipeline" title="Clear pipeline">Clear</button>
+          <button id="copy-pipeline" title="Copy pipeline as shell awk|awk|... command">Copy as shell</button>
+          <button id="preview-pipeline" title="Run pipeline and show intermediates only">Preview</button>
+          <button id="run-pipeline" title="Run pipeline on selection and replace">Run &amp; Apply</button>
+          <button id="save-pipeline" title="Save current pipeline as a chain">Save as chain</button>
+        </div>
+        <ol id="pipeline-steps"></ol>
+        <div id="pipeline-vars"></div>
+        <div id="pipeline-outputs"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="palette" class="hidden" aria-hidden="true">
+    <div class="palette-inner" role="dialog" aria-label="Run Awk">
+      <div class="palette-main">
+        <div class="palette-title">
+          <span class="palette-title-name">Command palette</span>
+          <span class="palette-title-kbd">
+            <span class="kbd" data-mod>Ctrl</span>+<span class="kbd">K</span>
+          </span>
+        </div>
+        <textarea id="palette-input" rows="1" placeholder="awk program (Enter = apply, Shift+Enter = newline)" autocomplete="off" spellcheck="false"></textarea>
+        <div class="palette-step-fields">
+          <details class="palette-vars palette-section">
+            <summary class="label">Variables</summary>
+            <ul id="palette-vars-list" class="params-list"></ul>
+            <div class="palette-vars-actions">
+              <button type="button" id="palette-add-var" class="add-param-btn">+ Add variable</button>
+              <button type="button" id="palette-vars-detect" title="Scan the awk program for referenced variables and add any missing rows">Detect from program</button>
+              <button type="button" id="palette-vars-clear" title="Remove every variable row">Clear variables</button>
+            </div>
+          </details>
+        </div>
+        <div class="palette-meta">
+          <label class="palette-pipeline-toggle" title="When on, the current pipeline's steps run first, then this program runs against their output. Add to pipeline appends this as a new step and the palette stays open so you can build the next step; normally the palette closes after adding.">
+            <input type="checkbox" id="palette-pipeline-mode"> Pipeline mode
+          </label>
+          <span id="palette-pipeline-count" class="muted"></span>
+          <button id="palette-pop-last" type="button" title="Remove the last pipeline step">Pop last</button>
+          <button id="palette-copy-io" type="button" title="Scans preceding pipeline steps' BEGIN blocks and prepends assignments to FS, OFS, RS, ORS, FIELDWIDTHS, FPAT, CONVFMT, OFMT into this step's BEGIN. Last writer wins when the same var is set in multiple upstream steps; any var already set here is left alone.">Copy I/O from steps</button>
+          <button id="palette-program-clear" type="button" title="Clear the awk program">Clear program</button>
+          <button id="palette-detect-fs" type="button" title="Guess the field separator (FS) from the current editor selection — samples up to 50 non-empty lines and picks the candidate (comma, tab, pipe, semicolon, colon, or other punctuation) that splits every line into the same number of fields. If the awk program is empty, also inserts a scaffold ({ print $1, $2, … $N }) so the preview shows every field separated by OFS.">Detect FS</button>
+          <button id="palette-columns" type="button" class="gawk-only-btn" title="Open the fixed-width columns picker: visually set FIELDWIDTHS by clicking boundaries on a ruler over a sample from the main editor, or auto-detect boundaries from columns of spaces. gawk-only.">Fixed Columns…</button>
+          <button id="palette-fpat" type="button" class="gawk-only-btn" title="Open the field-pattern picker: pick a preset (CSV with quoted fields, bracketed log fields, etc.) or type a custom regex, see each field highlighted live in a sample, and insert as BEGIN { FPAT = … }. gawk-only.">Field Pattern…</button>
+          <button id="palette-strftime" type="button" class="gawk-only-btn" title="Open the strftime() format picker: pick a preset (ISO 8601, RFC 3339, Apache log, syslog, filename-safe, etc.) or type a custom format string, preview it against current time and a fixed reference moment, and insert the call at the cursor. gawk-only.">Timestamp…</button>
+          <button id="palette-format" type="button" class="format-btn" title="Re-format the program via gawk --pretty-print: canonical K&amp;R braces, one statement per line, spaces around operators, tab indentation. Leaves the program untouched on syntax error. Requires gawk to be installed on the server.">Format</button>
+          <button id="palette-ref-toggle" type="button" class="ref-toggle-btn">Show reference</button>
+        </div>
+        <span class="filter-field">
+          <input id="palette-search" type="text" placeholder="Filter snippets, templates & history…" autocomplete="off" spellcheck="false">
+          <button type="button" class="filter-clear" id="palette-search-clear" aria-label="Clear filter" title="Clear filter">×</button>
+        </span>
+        <details class="palette-section" id="palette-section-library" open>
+          <summary class="label">Snippets &amp; templates</summary>
+          <div class="palette-scope-row">
+            <span class="palette-scope-label muted">Show:</span>
+            <button type="button" id="palette-scope-templates" class="sidebar-scope-toggle" aria-pressed="true" title="Include templates — program skeletons intended as starting points">T · Templates</button>
+            <button type="button" id="palette-scope-snippets" class="sidebar-scope-toggle" aria-pressed="true" title="Include snippets — complete programs you can use directly">S · Snippets</button>
+          </div>
+          <div id="palette-tag-filter" class="palette-tag-filter palette-tag-filter-divided" hidden></div>
+          <ul id="palette-library"></ul>
+        </details>
+        <details class="palette-section" id="palette-section-history" open>
+          <summary class="label">History <button type="button" id="palette-history-clear" class="palette-history-clear" title="Clear history">Clear</button></summary>
+          <ul id="palette-history"></ul>
+        </details>
+        <div class="palette-preview">
+          <div class="label">Preview</div>
+          <pre id="palette-output"></pre>
+          <span id="palette-scope" class="muted palette-scope"></span>
+        </div>
+        <div class="palette-save-row">
+          <input id="palette-step-name" type="text" placeholder="step name (optional; required to Save as snippet or template)" autocomplete="off" spellcheck="false">
+          <button id="palette-save" type="button" title="Save the current program + variables as a reusable snippet (uses the step-name field as the snippet name)">Save as snippet</button>
+          <button id="palette-save-template" type="button" title="Save the current program body as a reusable template (uses the step-name field as the template name)">Save as template</button>
+        </div>
+        <div class="palette-actions">
+          <button id="palette-advanced-toggle" type="button" class="palette-advanced-toggle">Show advanced</button>
+          <span class="palette-actions-spacer"></span>
+          <button id="palette-pipe" type="button">Add to pipeline</button>
+          <button id="palette-cancel" type="button">Close (Esc)</button>
+          <button id="palette-apply" type="button" class="primary">Apply</button>
+        </div>
+      </div>
+      <aside class="snippet-reference" id="palette-reference"></aside>
+    </div>
+  </div>
+
+  <dialog id="snippet-dialog">
+    <form method="dialog">
+      <h3 id="snippet-title">New snippet</h3>
+      <div class="fork-banner" id="snippet-fork-banner" hidden></div>
+      <label>Name<input id="snippet-name" required></label>
+      <details class="snippet-metadata-section" id="snippet-metadata-section">
+        <summary class="dialog-preview-summary">Metadata</summary>
+        <label>Description (optional, shown on hover)<textarea id="snippet-description" rows="2" spellcheck="true"></textarea></label>
+        <label>Tags (optional — group the sidebar)<div id="snippet-tags" class="tag-chip-input"></div></label>
+      </details>
+      <div class="snippet-editor-row">
+        <div class="snippet-editor-col">
+          <label>Awk program<textarea id="snippet-program" rows="6" required spellcheck="false"></textarea></label>
+          <div class="templates-row">
+            <button type="button" id="snippet-program-clear" title="Clear the program area">Clear</button>
+            <button type="button" id="snippet-detect-fs" title="Guess the field separator (FS) from the current editor selection — samples up to 50 non-empty lines and picks the candidate (comma, tab, pipe, semicolon, colon, or other punctuation) that splits every line into the same number of fields. If the awk program is empty, also inserts a scaffold ({ print $1, $2, … $N }) so the preview shows every field separated by OFS.">Detect FS</button>
+            <button type="button" id="snippet-columns" class="gawk-only-btn" title="Open the fixed-width columns picker: visually set FIELDWIDTHS by clicking boundaries on a ruler over a sample from the main editor, or auto-detect boundaries from columns of spaces. gawk-only.">Fixed Columns…</button>
+            <button type="button" id="snippet-fpat" class="gawk-only-btn" title="Open the field-pattern picker: pick a preset (CSV with quoted fields, bracketed log fields, etc.) or type a custom regex, see each field highlighted live in a sample, and insert as BEGIN { FPAT = … }. gawk-only.">Field Pattern…</button>
+            <button type="button" id="snippet-strftime" class="gawk-only-btn" title="Open the strftime() format picker: pick a preset (ISO 8601, RFC 3339, Apache log, syslog, filename-safe, etc.) or type a custom format string, preview it against current time and a fixed reference moment, and insert the call at the cursor. gawk-only.">Timestamp…</button>
+            <button type="button" id="snippet-format" class="format-btn" title="Re-format the program via gawk --pretty-print: canonical K&amp;R braces, one statement per line, spaces around operators, tab indentation. Leaves the program untouched on syntax error. Requires gawk to be installed on the server.">Format</button>
+            <button type="button" id="ref-toggle" class="ref-toggle-btn">Hide reference</button>
+          </div>
+          <details class="templates-section">
+            <summary class="templates-section-summary">Insert template or snippet</summary>
+            <span class="filter-field">
+              <input type="text" id="snippet-template-filter" class="templates-filter" placeholder="Filter templates &amp; snippets…" autocomplete="off" spellcheck="false">
+              <button type="button" class="filter-clear" aria-label="Clear filter" title="Clear filter">×</button>
+            </span>
+            <div class="templates-scope">
+              <span class="templates-scope-label muted">Show:</span>
+              <button type="button" id="snippet-template-scope-templates" class="sidebar-scope-toggle" aria-pressed="true" title="Include templates (skeletons intended as starting points)">Templates</button>
+              <button type="button" id="snippet-template-scope-snippets" class="sidebar-scope-toggle" aria-pressed="true" title="Include existing snippets as starting points">Snippets</button>
+            </div>
+            <ul id="snippet-template-list" class="template-chip-list"></ul>
+            <details class="template-preview" id="snippet-template-preview" open>
+              <summary class="template-preview-summary">Preview <span class="template-preview-name muted"></span></summary>
+              <pre class="template-preview-body"></pre>
+            </details>
+          </details>
+        </div>
+        <aside class="snippet-reference" id="snippet-reference"></aside>
+      </div>
+      <details class="snippet-params-section" id="snippet-params-section">
+        <summary class="dialog-preview-summary">Parameters</summary>
+        <div class="snippet-params-hint muted">Optional, passed as <code>awk -v</code></div>
+        <ul id="snippet-params" class="params-list"></ul>
+        <div class="snippet-params-actions">
+          <button type="button" id="snippet-add-param" class="add-param-btn">+ Add parameter</button>
+          <button type="button" id="snippet-detect-params" title="Scan the awk program for referenced variables and add any missing parameter rows">Detect from program</button>
+        </div>
+      </details>
+      <details class="snippet-preview dialog-preview" id="snippet-preview-details">
+        <summary class="dialog-preview-summary">Preview Transformation</summary>
+        <span id="snippet-preview-meta" class="muted"></span>
+        <pre id="snippet-preview-output"></pre>
+      </details>
+      <details class="tests-section" id="snippet-tests-section">
+        <summary class="tests-section-summary">Test cases <span id="snippet-tests-summary" class="tests-summary-label muted"></span></summary>
+        <div class="tests-section-body">
+          <div class="tests-list" id="snippet-tests-list"></div>
+          <div class="tests-actions">
+            <button type="button" id="snippet-tests-add">+ Add test</button>
+            <button type="button" id="snippet-tests-capture" title="Create a test case from the current input and the program's current output — input becomes this test's Input, the run's output becomes its Expected.">+ From preview</button>
+            <button type="button" id="snippet-tests-run-all">Run all tests</button>
+          </div>
+        </div>
+      </details>
+      <details class="shortcut-section" id="snippet-shortcut-section">
+        <summary class="shortcut-section-summary">Keyboard shortcuts <span id="snippet-shortcut-summary" class="shortcut-summary-label muted"></span></summary>
+        <div class="shortcut-section-body">
+          <div class="shortcut-hint-text muted">Focus a field, then press the combination you want. Tip: pair <span class="kbd" data-mod>Ctrl</span>+<span class="kbd">K</span> (apply) with <span class="kbd" data-mod>Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">K</span> (insert) so the modifier tells you the action.</div>
+          <div class="shortcut-row-label">Run on selection <span class="muted">— transforms the current selection (or whole tab)</span></div>
+          <div class="shortcut-capture-row">
+            <input type="text" id="snippet-shortcut-input" class="shortcut-capture-input" readonly placeholder="Click here, then press a combination…" aria-label="Record keyboard shortcut for run on selection">
+            <button type="button" id="snippet-shortcut-clear" title="Clear shortcut">Clear</button>
+          </div>
+          <div id="snippet-shortcut-warning" class="shortcut-warning" hidden></div>
+          <div class="shortcut-row-label">Insert at cursor <span class="muted">— runs BEGIN/END only (empty input), inserts output at the cursor</span></div>
+          <div class="shortcut-capture-row">
+            <input type="text" id="snippet-shortcut-insert-input" class="shortcut-capture-input" readonly placeholder="Click here, then press a combination…" aria-label="Record keyboard shortcut for insert at cursor">
+            <button type="button" id="snippet-shortcut-insert-clear" title="Clear shortcut">Clear</button>
+          </div>
+          <div id="snippet-shortcut-insert-warning" class="shortcut-warning" hidden></div>
+        </div>
+      </details>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" id="snippet-copy-shell" title="Copy this snippet as a shell command (awk -v … '…')">Copy as shell</button>
+        <button type="button" id="snippet-download-sh" title="Download this snippet as a standalone script. File extension, flatten behavior, and template are configurable in Settings → Script export.">Download script</button>
+        <button type="submit" value="save" id="snippet-save" class="primary">Save</button>
+        <button type="submit" value="fork" id="snippet-fork" class="primary" hidden>Fork to inline step</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="columns-dialog" aria-labelledby="columns-title">
+    <form method="dialog">
+      <h3 id="columns-title">Define fixed-width columns</h3>
+      <div class="cp-hint muted">Click any column position on the ruler — or on the sample text below — to set a field boundary. Click an existing boundary to remove it. Sample is taken from the main editor’s current selection (or the active tab when nothing is selected).</div>
+      <div class="cp-empty" id="cp-empty" hidden>No sample text available — select some columnar text in the main editor (or open a tab) and try again.</div>
+      <div class="cp-sample-wrap" id="cp-sample-wrap">
+        <div id="cp-ruler-labels" class="cp-ruler-labels" aria-hidden="true"></div>
+        <div id="cp-ruler" class="cp-ruler" aria-label="Column ruler"></div>
+        <div id="cp-sample" class="cp-sample"></div>
+      </div>
+      <div class="cp-controls">
+        <button type="button" id="cp-auto-detect" title="Propose boundaries based on columns of spaces that align across every sampled line. You can tweak the result by clicking the ruler afterwards.">Auto-detect</button>
+        <button type="button" id="cp-clear" title="Remove all boundaries and reset the trailing-* flag">Clear</button>
+        <label class="cp-checkbox" title="When on, the last field uses gawk 4.2+'s * syntax, meaning 'take whatever remains on the line.' Useful for ragged trailing fields (e.g. filenames in ls -l output).">
+          <input type="checkbox" id="cp-trailing-star" checked>
+          <span>Last field extends to end of line (<code>*</code>, gawk 4.2+)</span>
+        </label>
+        <span class="cp-widen" title="Shrink (−) or widen (+) the ruler by the number of columns shown in the input. Shrink won't drop below the sampled data or any existing boundary.">
+          <span class="cp-widen-label muted">Resize</span>
+          <button type="button" id="cp-fit-btn" title="Set the ruler width to match the longest line in the input (drops any extra padding).">Fit</button>
+          <button type="button" id="cp-shrink-btn" aria-label="Shrink ruler">−</button>
+          <input type="number" id="cp-widen-step" min="1" max="500" step="1" value="10" aria-label="Columns to add or remove per click">
+          <button type="button" id="cp-widen-btn" aria-label="Widen ruler">+</button>
+        </span>
+      </div>
+      <div class="cp-readout"><code id="cp-readout-code">(no boundaries yet)</code></div>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" id="cp-insert" class="primary">Insert FIELDWIDTHS</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="strftime-dialog" aria-labelledby="strftime-title">
+    <form method="dialog">
+      <h3 id="strftime-title">Insert strftime() timestamp</h3>
+      <div class="sf-hint muted"><code>strftime(format[, timestamp])</code> formats a Unix timestamp (defaults to now via <code>systime()</code>) against a format string. The format codes below are POSIX-standard; <strong>strftime itself is a gawk extension</strong>, so programs using it won't run under POSIX awk / one-true-awk.</div>
+      <label class="sf-row">
+        <span class="sf-label">Preset</span>
+        <select id="sf-preset"></select>
+      </label>
+      <div class="sf-preset-desc muted" id="sf-preset-desc"></div>
+      <label class="sf-row">
+        <span class="sf-label">Format</span>
+        <input type="text" id="sf-format" spellcheck="false" autocomplete="off" autocapitalize="off">
+      </label>
+      <div class="sf-preview-wrap" id="sf-preview-wrap">
+        <div class="sf-preview-meta muted">Previewed against your local clock and a fixed reference moment, so you can see how padding and text codes behave.</div>
+        <table class="sf-preview-table">
+          <tbody>
+            <tr><th scope="row">Now</th><td id="sf-preview-now" class="sf-preview-cell"></td></tr>
+            <tr><th scope="row">Sample<span class="sf-sample-note muted" id="sf-sample-label"></span></th><td id="sf-preview-sample" class="sf-preview-cell"></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <details class="sf-cheatsheet">
+        <summary>Format code reference</summary>
+        <div class="sf-cheatsheet-list" id="sf-cheatsheet-body"></div>
+      </details>
+      <div class="sf-readout"><code id="sf-readout-code">(no format yet)</code></div>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" id="sf-insert" class="primary">Insert strftime()</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="fpat-dialog" aria-labelledby="fpat-title">
+    <form method="dialog">
+      <h3 id="fpat-title">Define field pattern (FPAT)</h3>
+      <div class="fp-hint muted">FPAT defines what each <em>field</em> looks like (instead of FS, which defines what <em>separates</em> fields). Useful when fields are easier to describe than the gaps — classic example: CSV where commas inside quoted fields would break <code>FS = ","</code>.</div>
+      <div class="fp-empty" id="fp-empty" hidden>No sample text available — select some text in the main editor (or open a tab) and try again.</div>
+      <label class="fp-row">
+        <span class="fp-label">Preset</span>
+        <select id="fp-preset"></select>
+      </label>
+      <div class="fp-preset-desc muted" id="fp-preset-desc"></div>
+      <label class="fp-row">
+        <span class="fp-label">Pattern</span>
+        <input type="text" id="fp-regex" spellcheck="false" autocomplete="off" autocapitalize="off">
+      </label>
+      <div class="fp-preview-wrap" id="fp-preview-wrap">
+        <div class="fp-preview-meta muted" id="fp-preview-meta"></div>
+        <div class="fp-preview" id="fp-preview"></div>
+      </div>
+      <div class="fp-readout"><code id="fp-readout-code">(no pattern yet)</code></div>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" id="fp-insert" class="primary">Insert FPAT</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form method="dialog" class="settings-form">
+      <h3>Settings</h3>
+      <div class="settings-search-row">
+        <span class="filter-field">
+          <input type="text" id="set-search" class="settings-search-input" placeholder="Filter settings — name, description, section…" autocomplete="off" spellcheck="false">
+          <button type="button" class="filter-clear" aria-label="Clear filter" title="Clear filter">×</button>
+        </span>
+        <span id="set-search-empty" class="muted settings-search-empty" hidden>No settings match that filter.</span>
+      </div>
+
+      <fieldset>
+        <legend>Execution</legend>
+        <label title="Which awk implementation to spawn. gawk is the default and the only one that supports --sandbox."><span>Binary</span><select id="set-binary"></select></label>
+        <label title="Server-controlled: the server adds --sandbox to gawk unless started with --unsafe (or UNSAFE_AWK=1). The client cannot change this."><span>Sandbox</span><span id="set-sandbox-status" class="muted">(enforced by server)</span></label>
+        <label title="Additional command-line flags passed to awk, one per line (e.g. --re-interval, --posix)."><span>Extra args (one per line)</span><textarea id="set-args" rows="3" spellcheck="false" placeholder="--posix"></textarea></label>
+        <label title="Maximum wall-clock time (ms) for a single run before the process is SIGKILLed."><span>Timeout (ms)</span><input type="number" id="set-timeout" min="100" max="60000"></label>
+        <label title="Cap on combined stdout + stderr bytes per run. Output above this is truncated and a note is added to stderr."><span>Max output (bytes)</span><input type="number" id="set-max-output" min="1024" max="52428800"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Editor</legend>
+        <label><span>Tab size</span><input type="number" id="set-tab-size" min="1" max="8"></label>
+        <label><span>Font size (px)</span><input type="number" id="set-font-size" min="8" max="32"></label>
+        <label title="Font family used everywhere awk code is shown — the editor tab, snippet / inline-step / chain dialogs, command palette, and the preview / sidebar code rows. Missing fonts fall through to `'SF Mono', Monaco, Consolas, monospace` automatically, so picking something you don't have installed won't break anything."><span>Font family</span><select id="set-font-family"></select></label>
+        <label id="set-font-family-custom-row" hidden title="Any CSS font-family value. The app prepends your choice ahead of the built-in fallback stack, so you can include your own fallbacks or leave the CSS default to catch when your font isn't installed."><span>Custom font family</span><input type="text" id="set-font-family-custom" spellcheck="false" autocomplete="off" placeholder="e.g. 'Berkeley Mono', monospace"></label>
+        <label title="Text pre-filled into the editor when you open a brand-new tab."><span>Default new tab text</span><textarea id="set-default-tab-text" rows="3" spellcheck="false"></textarea></label>
+        <label><input type="checkbox" id="set-confirm-close"><span>Confirm before closing tabs with content</span></label>
+        <label title="Inserted between the target and source content when you Shift+drop one tab onto another."><span>Tab merge separator</span><select id="set-tab-merge-separator"><option value="dash">--- line</option><option value="newline">Blank line</option><option value="none">None (direct append)</option></select></label>
+        <label title="Shows a confirmation dialog when a snippet or palette program textarea is about to be emptied (e.g. via the Clear button)."><input type="checkbox" id="set-confirm-clear-program"><span>Confirm before clearing awk program</span></label>
+        <label><input type="checkbox" id="set-line-numbers"><span>Show line numbers</span></label>
+        <label title="awk's print always adds a trailing newline. When on, a single trailing newline is stripped from awk output before it replaces the selection / tab — matching what you'd expect when transforming a single line or a selection that didn't already end in a newline."><input type="checkbox" id="set-strip-trailing-newline"><span>Strip trailing newline from awk output</span></label>
+        <label><span>Default word wrap</span><select id="set-default-wrap"><option value="off">Off</option><option value="on">On</option></select></label>
+        <label title="Milliseconds to wait after typing before autosaving the editor buffer to localStorage. Higher = fewer writes; lower = less at-risk if the tab crashes."><span>Save debounce (ms)</span><input type="number" id="set-save-debounce" min="0" max="5000"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Command palette</legend>
+        <label title="On: Enter runs the program and dismisses the palette. Off: Enter inserts a newline into the program; use the Apply button or Ctrl+Enter to run."><input type="checkbox" id="set-palette-enter-applies"><span>Apply awk program and close on Enter</span></label>
+        <label title="Advanced view shows per-run variables, binary override, and extra args. Simple view is program + input only."><input type="checkbox" id="set-palette-default-advanced"><span>Open palette in advanced view by default</span></label>
+        <label><input type="checkbox" id="set-confirm-clear-history"><span>Confirm before clearing command palette history</span></label>
+        <div class="label-text">Palette sections expanded by default</div>
+        <div class="settings-inline">
+          <label><input type="checkbox" data-palette-section-default="library"><span>Snippets &amp; templates</span></label>
+          <label><input type="checkbox" data-palette-section-default="history"><span>History</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>UI / Layout</legend>
+        <label title="Populated from the .css files in public/themes/. Changing the dropdown applies the theme live; close without saving to revert."><span>Theme</span><select id="set-theme"></select></label>
+        <label title="UI chrome density. Compact tightens button padding, sidebar rows, and section headers; Roomy loosens them. Doesn't affect the editor font size — that's the Editor → Font size setting."><span>Density</span><select id="set-density"><option value="compact">Compact</option><option value="normal">Normal</option><option value="roomy">Roomy</option></select></label>
+        <label><span>Default sidebar width (px)</span><input type="number" id="set-sidebar-width" min="150" max="600"></label>
+        <label title="When on, the awk reference panel (the language-reference drawer inside snippet-edit and pipeline dialogs) is visible by default — off hides it until you click the toggle."><input type="checkbox" id="set-ref-default-shown"><span>Show reference panel by default</span></label>
+        <label><input type="checkbox" id="set-show-restore-defaults"><span>Show "Restore defaults" buttons</span></label>
+        <label title="When on, show the ▶ Run all tests button in the Snippets and Chains sidebar section headers. The button still only appears when the section actually has any tests attached — turning this on doesn't surface it for an empty test set."><input type="checkbox" id="set-show-run-all-tests"><span>Show "Run all tests" button</span></label>
+        <label><span>Drag to tag group</span><select id="set-drag-to-tag-mode"><option value="add">Add tag (keep existing)</option><option value="move">Move tag (replace source tag)</option></select></label>
+        <label title="Which kinds the Runner (Ctrl+O) includes by default when it opens. Inside the dialog you can still toggle the Snippets / Chains chips — the chosen state is remembered here."><span>Runner default scope</span><select id="set-runner-scope"><option value="both">Snippets and chains</option><option value="snippets">Snippets only</option><option value="chains">Chains only</option></select></label>
+        <div class="label-text">Sections expanded by default</div>
+        <div class="settings-inline">
+          <label><input type="checkbox" data-section-default="snippets"><span>Snippets</span></label>
+          <label><input type="checkbox" data-section-default="chains"><span>Chains</span></label>
+          <label><input type="checkbox" data-section-default="templates"><span>Templates</span></label>
+          <label><input type="checkbox" data-section-default="text-snippets"><span>Text Snippets</span></label>
+        </div>
+        <div class="label-text">Format</div>
+        <label title="When on (default), show the Format button that reformats the current program via `gawk --pretty-print`. Turn off if you prefer your own formatting or don't have gawk installed on the server (mawk / one-true-awk don't implement pretty-print)."><input type="checkbox" id="set-show-format-button"><span>Show Format button (gawk --pretty-print)</span></label>
+        <label title="When on (default), the Format button replaces the leading run of tabs on each line of gawk's pretty-print output with the number of spaces set below. Only indentation is touched — tabs inside comments, between code and a trailing `#` comment, or inside a regex literal are left alone (those are user content, not indentation)."><input type="checkbox" id="set-format-replace-tabs"><span>Format: replace leading tabs with spaces</span></label>
+        <label title="Number of spaces each leading tab in the formatted output is replaced with. Ignored when the checkbox above is off."><span>Format: spaces per tab</span><input type="number" id="set-format-tab-spaces" min="1" max="8"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Awk dialect</legend>
+        <label title="When on (default), the awk tokenizer recognises gawk-specific keywords, builtins, and variables — gensub, asort, PROCINFO, IGNORECASE, etc. — in addition to the POSIX set. Turn off if you want a pure-POSIX view (for programs that must run under mawk or one-true-awk)."><input type="checkbox" id="set-highlight-gawk"><span>Highlight syntax of gawk-specific extensions</span></label>
+        <label title="When on (default), show buttons that insert non-POSIX (gawk-only) syntax — Fixed Columns… (FIELDWIDTHS) and Field Pattern… (FPAT) — across the command palette, snippet editor, and inline pipeline step editors. Turn off to hide them when targeting POSIX awk / mawk / one-true-awk."><input type="checkbox" id="set-show-gawk-buttons"><span>Show non-POSIX feature buttons (FIELDWIDTHS, FPAT)</span></label>
+        <label id="set-warn-gawk-only-row" title="When on (default), insert actions that introduce gawk-only syntax (e.g. the Columns picker inserting FIELDWIDTHS) show a warning toast each time the insertion happens. Turn off to silence the warnings if you know your target runtime is gawk."><input type="checkbox" id="set-warn-gawk-only"><span>Warn when inserting gawk-only syntax</span></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pipeline / Chain</legend>
+        <label title="When on, editing the active step (or clicking a different step) automatically runs a preview of the pipeline up to and including that step."><input type="checkbox" id="set-auto-preview"><span>Auto-preview on step change</span></label>
+        <label title="Stop: halt the pipeline and show the error. Skip step: pass that step's input through unchanged and continue with the next step."><span>On error</span><select id="set-on-error"><option value="stop">Stop</option><option value="skip">Skip step</option></select></label>
+        <label title="When the editor selection changes, clear every step's cached output so the pipeline reruns cleanly against the new selection."><input type="checkbox" id="set-clear-on-sel"><span>Clear pipeline outputs when selection changes</span></label>
+        <label title="When on (default), snippet and chain runs use the declared variable defaults without opening the prompt dialog. Turn off to always see the prompt so you can edit values for every run."><input type="checkbox" id="set-accept-defaults"><span>Accept variable defaults without prompting</span></label>
+        <label title="Truncates the input fed to a preview to N lines. Keeps auto-preview snappy on huge buffers. 0 means no truncation — the whole buffer is used."><span>Preview: max input lines (0 = all)</span><input type="number" id="set-preview-max-lines" min="0" max="1000000"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Script export</legend>
+        <p class="fieldset-hint muted">
+          Controls the snippet and chain dialogs' <strong>Download script</strong> button. Does not affect the per-step or per-pipeline <strong>Copy as shell</strong> buttons — those stay single-line clipboard output.
+        </p>
+        <label title="When on (default), each step's awk program is collapsed to one line (via `flattenAwkProgram`) before being quoted into the pipe. Turn off to keep multi-line awk programs as-is — safe because each program is wrapped in single quotes."><input type="checkbox" id="set-script-flatten"><span>Flatten awk programs into one line each</span></label>
+        <label title="File extension used for the download. Leading dot is added if you omit it. Set to empty for no extension."><span>File extension</span><input type="text" id="set-script-extension" placeholder=".sh" autocomplete="off" spellcheck="false"></label>
+        <div class="script-template-row">
+          <div class="script-template-head">
+            <span>Template</span>
+            <button type="button" id="set-script-template-reset" class="preset-reset" title="Restore the shipped default template" hidden>Reset to default</button>
+          </div>
+          <textarea id="set-script-template" class="script-template-textarea" rows="14" spellcheck="false" autocomplete="off"></textarea>
+          <p class="script-template-tokens muted">
+            Tokens: <code>{SCRIPT_NAME}</code> · <code>{AWK_PIPE_CMD}</code> · <code>{VARIABLES_BLOCK}</code> · <code>{STEP_NAMES_LIST}</code> · <code>{STEP_NAMES_LIST_NUMBERED}</code> · <code>{USAGE_EXAMPLE}</code>. <code>{USAGE_EXAMPLE}</code> expands to <code>#&nbsp;./{SCRIPT_NAME}&nbsp;&lt;&nbsp;INPUT_FILE</code> with the script name resolved.
+          </p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Tests</legend>
+        <label title="After saving a snippet with tests attached, immediately run them and surface a pass/fail badge on its sidebar row."><input type="checkbox" id="set-tests-run-on-save"><span>Run snippet's tests when it is saved</span></label>
+        <label><input type="checkbox" id="set-tests-show-unknown"><span>Show "?" status for snippets &amp; chains with tests that haven't run this session</span></label>
+      </fieldset>
+
+      <fieldset id="settings-safety-section">
+        <legend>Safety</legend>
+        <label id="set-safety-manual-preview-row"><input type="checkbox" id="set-safety-manual-preview"><span>Always require manual preview <span class="muted">— never auto-run programs on type; click Run preview to execute</span></span></label>
+        <label id="set-safety-auto-side-effects-row"><input type="checkbox" id="set-safety-auto-side-effects"><span>Auto-preview programs with side effects <span class="muted">— <em>off by default</em>. Side-effect programs (pipes, <code>system()</code>, <code>getline</code>, <code>&gt;</code> redirects) require a <strong>Run preview</strong> click so a half-typed destructive command can't fire mid-keystroke in unsafe mode. Turn on to opt out of that gate and auto-preview them anyway. Overridden by <strong>Always require manual preview</strong>.</span></span></label>
+        <label for="set-safety-forbidden" id="set-safety-forbidden-row" class="settings-stack"><span>Forbidden patterns <span class="muted">— one regex per line (JavaScript syntax, case-insensitive); any run (preview, selection, chain, etc.) is blocked if the awk source or a variable value matches. Lines starting with <code>#</code> are comments. Blank lines and invalid regex are skipped.</span></span>
+          <textarea id="set-safety-forbidden" rows="8" spellcheck="false" placeholder="\brm\s+-\S*[rR]\S*[fF]\S*\s+/&#10;\b(curl|wget)\b[^|]*\|\s*(sh|bash)\b"></textarea>
+        </label>
+        <label for="set-safety-test" class="settings-stack"><span>Test a command <span class="muted">— paste or type something and see whether the patterns above would prevent it. Uses the current textarea contents (live, no need to Save first) and the same matcher the app uses at run time.</span></span>
+          <input type="text" id="set-safety-test" spellcheck="false" autocomplete="off" placeholder="e.g. curl https://example.com/install.sh | sh">
+        </label>
+        <div id="set-safety-test-result" class="safety-test-result" hidden></div>
+        <details class="tests-section" id="safety-tests-section">
+          <summary class="tests-section-summary">Saved command checks <span id="safety-tests-summary" class="tests-summary-label muted"></span></summary>
+          <div class="tests-section-body">
+            <div class="safety-tests-hint muted">Each row pairs a command with an expected verdict (<em>prevent</em> or <em>allow</em>). All rows re-run automatically on every edit to the patterns above, so edits to the regex list can't silently break a known-safe or known-bad command.</div>
+            <div class="tests-list" id="safety-tests-list"></div>
+            <div class="tests-actions">
+              <button type="button" id="safety-tests-add">+ Add check</button>
+            </div>
+          </div>
+        </details>
+      </fieldset>
+
+      <fieldset id="settings-presets-section">
+        <legend>Presets</legend>
+        <div class="label-text">Built-in preset lists that appear in the picker dropdowns for <em>Field Pattern (FPAT)</em> and <em>Timestamp (strftime)</em>. Edit a row to tweak label / value / description; use <em>Add preset</em> to create a new row; use <em>Reset row</em> (visible on built-ins you've modified) to restore a single row to its shipped default. Rows with an empty label or value are dropped on save.</div>
+
+        <details class="presets-group" id="set-presets-fpat-group">
+          <summary>Field patterns (FPAT) <span class="presets-group-count muted" id="set-presets-fpat-count"></span></summary>
+          <div class="presets-editor" id="set-presets-fpat-wrap">
+            <div class="presets-list" id="set-presets-fpat-list"></div>
+            <div class="presets-actions">
+              <button type="button" id="set-presets-fpat-add">+ Add preset</button>
+              <button type="button" id="set-presets-fpat-restore" class="restore-defaults-btn" hidden>Restore defaults</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="presets-group" id="set-presets-timestamp-group">
+          <summary>Timestamp formats (strftime) <span class="presets-group-count muted" id="set-presets-timestamp-count"></span></summary>
+          <div class="presets-editor" id="set-presets-timestamp-wrap">
+            <div class="presets-list" id="set-presets-timestamp-list"></div>
+            <div class="presets-actions">
+              <button type="button" id="set-presets-timestamp-add">+ Add preset</button>
+              <button type="button" id="set-presets-timestamp-restore" class="restore-defaults-btn" hidden>Restore defaults</button>
+            </div>
+          </div>
+        </details>
+      </fieldset>
+
+      <fieldset id="settings-system-shortcuts-section">
+        <legend>System shortcuts</legend>
+        <div class="label-text">Built-in app actions (palette, snippet runner, find, etc.). Click a cell and press the combination you want; <em>Reset</em> reverts to the built-in default. Defaults appear as a tooltip on each action name.</div>
+        <div id="set-system-shortcuts-list" class="shortcuts-settings-list"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Snippet keyboard shortcuts</legend>
+        <div id="set-shortcuts-hint" class="label-text">Click a combination to re-record, or Clear to remove. New shortcuts can also be added from each snippet's Edit dialog.</div>
+        <div id="set-shortcuts-list" class="shortcuts-settings-list"></div>
+        <div id="set-shortcuts-empty" class="muted" hidden>No snippets have shortcuts yet.</div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Chain keyboard shortcuts</legend>
+        <div id="set-chain-shortcuts-hint" class="label-text">Click a combination to re-record, or Clear to remove. New shortcuts can also be added from each chain's Edit dialog.</div>
+        <div id="set-chain-shortcuts-list" class="shortcuts-settings-list"></div>
+        <div id="set-chain-shortcuts-empty" class="muted" hidden>No chains have shortcuts yet.</div>
+      </fieldset>
+
+      <fieldset class="danger-zone">
+        <legend>DANGER ZONE</legend>
+        <div class="danger-zone-row">
+          <div class="danger-zone-text">
+            <strong>Reset settings</strong>
+            <span class="muted">Restore preferences (timeouts, theme, defaults, …) to their built-in values. Library is untouched.</span>
+          </div>
+          <button type="button" id="set-reset" class="danger-btn">Reset settings</button>
+        </div>
+        <div class="danger-zone-row">
+          <div class="danger-zone-text">
+            <strong>Reset application</strong>
+            <span class="muted">Wipe everything — snippets, chains, templates, tabs, settings, UI prefs — then reload. Cannot be undone.</span>
+          </div>
+          <button type="button" id="set-reset-app" class="danger-btn">Reset application</button>
+        </div>
+      </fieldset>
+
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="submit" value="save" class="primary">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="template-dialog">
+    <form method="dialog">
+      <h3 id="template-title">New template</h3>
+      <label>Name<input id="template-name" required></label>
+      <details class="snippet-metadata-section" id="template-metadata-section">
+        <summary class="dialog-preview-summary">Metadata</summary>
+        <label>Description (optional, shown on hover)<textarea id="template-description" rows="2" spellcheck="true"></textarea></label>
+        <label>Tags (optional — group the sidebar)<div id="template-tags" class="tag-chip-input"></div></label>
+      </details>
+      <label>Body<textarea id="template-body" rows="10" required spellcheck="false"></textarea></label>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="submit" value="save" class="primary">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="run-vars-dialog">
+    <form method="dialog">
+      <h3>Set variables</h3>
+      <div id="run-vars-list" class="params-list"></div>
+      <button type="button" id="run-vars-show-all" class="run-vars-show-all" hidden></button>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" id="run-vars-save-as-chain" title="Cancel this run and create a chain that wraps this snippet with the values above — opens the chain for editing." hidden>Save as chain…</button>
+        <button type="submit" value="run" class="primary">Run</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="inline-step-dialog">
+    <form method="dialog">
+      <h3>Edit inline step</h3>
+      <label>Name (optional, required to save as snippet)<input id="inline-step-name" type="text"></label>
+      <div class="snippet-editor-row">
+        <div class="snippet-editor-col">
+          <label>Awk program<textarea id="inline-step-program" rows="6" required spellcheck="false"></textarea></label>
+          <div class="templates-row">
+            <button type="button" id="inline-step-program-clear" title="Clear the program area">Clear</button>
+            <button type="button" id="inline-step-detect-fs" title="Guess the field separator (FS) from the current editor selection — samples up to 50 non-empty lines and picks the candidate (comma, tab, pipe, semicolon, colon, or other punctuation) that splits every line into the same number of fields. If the awk program is empty, also inserts a scaffold ({ print $1, $2, … $N }) so the preview shows every field separated by OFS.">Detect FS</button>
+            <button type="button" id="inline-step-columns" class="gawk-only-btn" title="Open the fixed-width columns picker: visually set FIELDWIDTHS by clicking boundaries on a ruler over a sample from the main editor, or auto-detect boundaries from columns of spaces. gawk-only.">Fixed Columns…</button>
+            <button type="button" id="inline-step-fpat" class="gawk-only-btn" title="Open the field-pattern picker: pick a preset (CSV with quoted fields, bracketed log fields, etc.) or type a custom regex, see each field highlighted live in a sample, and insert as BEGIN { FPAT = … }. gawk-only.">Field Pattern…</button>
+            <button type="button" id="inline-step-strftime" class="gawk-only-btn" title="Open the strftime() format picker: pick a preset (ISO 8601, RFC 3339, Apache log, syslog, filename-safe, etc.) or type a custom format string, preview it against current time and a fixed reference moment, and insert the call at the cursor. gawk-only.">Timestamp…</button>
+            <button type="button" id="inline-step-format" class="format-btn" title="Re-format the program via gawk --pretty-print: canonical K&amp;R braces, one statement per line, spaces around operators, tab indentation. Leaves the program untouched on syntax error. Requires gawk to be installed on the server.">Format</button>
+            <button type="button" id="inline-step-copy-io" title="Scans preceding steps' BEGIN blocks and prepends assignments to FS, OFS, RS, ORS, FIELDWIDTHS, FPAT, CONVFMT, OFMT into this step's BEGIN. Last writer wins when the same var is set in multiple upstream steps; any var already set in this step is left alone.">Copy I/O settings from preceding steps</button>
+            <button type="button" id="inline-step-ref-toggle" class="ref-toggle-btn">Hide reference</button>
+          </div>
+          <details class="templates-section">
+            <summary class="templates-section-summary">Insert template</summary>
+            <span class="filter-field">
+              <input type="text" id="inline-step-template-filter" class="templates-filter" placeholder="Filter templates…" autocomplete="off" spellcheck="false">
+              <button type="button" class="filter-clear" aria-label="Clear filter" title="Clear filter">×</button>
+            </span>
+            <ul id="inline-step-template-list" class="template-chip-list"></ul>
+            <details class="template-preview" id="inline-step-template-preview" open>
+              <summary class="template-preview-summary">Preview <span class="template-preview-name muted"></span></summary>
+              <pre class="template-preview-body"></pre>
+            </details>
+          </details>
+        </div>
+        <aside class="snippet-reference" id="inline-step-reference"></aside>
+      </div>
+      <details class="snippet-params-section" id="inline-step-params-section">
+        <summary class="dialog-preview-summary">Parameters</summary>
+        <div class="snippet-params-hint muted">Optional, passed as <code>awk -v</code></div>
+        <ul id="inline-step-params" class="params-list"></ul>
+        <div class="snippet-params-actions">
+          <button type="button" id="inline-step-add-param" class="add-param-btn">+ Add parameter</button>
+          <button type="button" id="inline-step-detect-params" title="Scan the awk program for referenced variables and add any missing parameter rows">Detect from program</button>
+        </div>
+      </details>
+      <details class="inline-step-preview dialog-preview" id="inline-step-preview-details">
+        <summary class="dialog-preview-summary">Preview Transformation</summary>
+        <span id="inline-step-preview-meta" class="muted"></span>
+        <pre id="inline-step-preview-output"></pre>
+      </details>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" id="inline-step-copy-shell" title="Copy this step as a shell command (awk -v … '…')">Copy as shell</button>
+        <button type="button" id="inline-step-download-sh" title="Download this step as a standalone script. File extension, flatten behavior, and template are configurable in Settings → Script export.">Download script</button>
+        <button type="submit" value="save-as-snippet" formnovalidate>Save as snippet</button>
+        <button type="submit" value="save" class="primary">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="chain-dialog">
+    <form method="dialog">
+      <h3 id="chain-title">New chain</h3>
+      <label>Name<input id="chain-name" required></label>
+      <details class="snippet-metadata-section" id="chain-metadata-section">
+        <summary class="dialog-preview-summary">Metadata</summary>
+        <label>Description (optional, shown on hover)<textarea id="chain-description" rows="2" spellcheck="true"></textarea></label>
+        <label>Tags (optional — group the sidebar)<div id="chain-tags" class="tag-chip-input"></div></label>
+      </details>
+      <div class="label-text">Steps</div>
+      <ol id="chain-steps"></ol>
+      <details class="chain-add-step-section" open>
+        <summary class="chain-add-step-summary">Add step</summary>
+        <div class="chain-add-step-body">
+          <span class="filter-field">
+            <input id="chain-snippet-filter" type="text" placeholder="Filter snippets by name…" autocomplete="off">
+            <button type="button" class="filter-clear" aria-label="Clear filter" title="Clear filter">×</button>
+          </span>
+          <div id="chain-snippet-picker"></div>
+          <button type="button" id="chain-add-inline" class="add-inline-btn">+ Add inline step</button>
+        </div>
+      </details>
+      <details class="chain-vars-section" open>
+        <summary class="chain-vars-section-summary">Set variables <span id="chain-vars-count" class="chain-vars-count muted"></span></summary>
+        <div class="chain-vars-section-body">
+          <div class="muted chain-vars-hint">Optional chain-level defaults — leave blank to fall back to each step's default or be prompted at run time.</div>
+          <ul id="chain-vars-list" class="chain-vars-list"></ul>
+          <div id="chain-vars-empty" class="muted chain-vars-empty">No variables declared by these steps yet.</div>
+        </div>
+      </details>
+      <details class="chain-preview dialog-preview" id="chain-preview-details">
+        <summary class="dialog-preview-summary">Preview Transformation</summary>
+        <span id="chain-preview-meta" class="muted"></span>
+        <pre id="chain-preview-output"></pre>
+      </details>
+      <details class="tests-section" id="chain-tests-section">
+        <summary class="tests-section-summary">Test cases <span id="chain-tests-summary" class="tests-summary-label muted"></span></summary>
+        <div class="tests-section-body">
+          <div class="tests-list" id="chain-tests-list"></div>
+          <div class="tests-actions">
+            <button type="button" id="chain-tests-add">+ Add test</button>
+            <button type="button" id="chain-tests-capture" title="Create a test case from the current input and the chain's current output — input becomes this test's Input, the run's final output becomes its Expected.">+ From preview</button>
+            <button type="button" id="chain-tests-run-all">Run all tests</button>
+          </div>
+        </div>
+      </details>
+      <details class="shortcut-section" id="chain-shortcut-section">
+        <summary class="shortcut-section-summary">Keyboard shortcuts <span id="chain-shortcut-summary" class="shortcut-summary-label muted"></span></summary>
+        <div class="shortcut-section-body">
+          <div class="shortcut-hint-text muted">Focus a field, then press the combination you want. Tip: pair <span class="kbd" data-mod>Ctrl</span>+<span class="kbd">K</span> (apply) with <span class="kbd" data-mod>Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">K</span> (insert) so the modifier tells you the action.</div>
+          <div class="shortcut-row-label">Run on selection <span class="muted">— transforms the current selection (or whole tab)</span></div>
+          <div class="shortcut-capture-row">
+            <input type="text" id="chain-shortcut-input" class="shortcut-capture-input" readonly placeholder="Click here, then press a combination…" aria-label="Record keyboard shortcut for run on selection">
+            <button type="button" id="chain-shortcut-clear" title="Clear shortcut">Clear</button>
+          </div>
+          <div id="chain-shortcut-warning" class="shortcut-warning" hidden></div>
+          <div class="shortcut-row-label">Insert at cursor <span class="muted">— runs the chain with empty input, inserts output at the cursor</span></div>
+          <div class="shortcut-capture-row">
+            <input type="text" id="chain-shortcut-insert-input" class="shortcut-capture-input" readonly placeholder="Click here, then press a combination…" aria-label="Record keyboard shortcut for insert at cursor">
+            <button type="button" id="chain-shortcut-insert-clear" title="Clear shortcut">Clear</button>
+          </div>
+          <div id="chain-shortcut-insert-warning" class="shortcut-warning" hidden></div>
+        </div>
+      </details>
+      <menu>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" id="chain-copy-shell" title="Copy this chain as a shell pipe (awk … | awk … | …)">Copy as shell</button>
+        <button type="button" id="chain-download-sh" title="Download this chain as a standalone script. File extension, flatten behavior, and template are configurable in Settings → Script export.">Download script</button>
+        <button type="submit" value="save" class="primary">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="app-confirm-dialog" class="app-modal">
+    <form method="dialog">
+      <h3 class="app-confirm-title">Confirm</h3>
+      <p class="app-confirm-message"></p>
+      <menu>
+        <button type="submit" value="cancel" class="app-confirm-cancel">Cancel</button>
+        <button type="submit" value="ok" class="app-confirm-ok primary">OK</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="workspaces-dialog" class="app-modal" aria-labelledby="workspaces-title">
+    <form method="dialog">
+      <h3 id="workspaces-title">Workspaces</h3>
+      <p class="muted workspaces-hint">Save and restore named sets of tabs.</p>
+      <div class="workspaces-save-row">
+        <button type="button" id="workspaces-save-current">Save current tabs as workspace&hellip;</button>
+      </div>
+      <ul id="workspaces-list"></ul>
+      <menu>
+        <button type="submit" value="close">Close</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="tab-switcher" aria-label="Switch tab">
+    <form method="dialog">
+      <input id="tab-switcher-input" type="text" placeholder="Filter tabs…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="tab-switcher-list" aria-expanded="true">
+      <ul id="tab-switcher-list" role="listbox"></ul>
+    </form>
+  </dialog>
+
+  <dialog id="app-prompt-dialog" class="app-modal">
+    <form method="dialog">
+      <h3 class="app-prompt-title">Enter value</h3>
+      <p class="app-prompt-message"></p>
+      <input class="app-prompt-input" type="text" autocomplete="off">
+      <menu>
+        <button type="submit" value="cancel">Cancel</button>
+        <button type="submit" value="ok" class="app-prompt-ok primary">OK</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="runner" aria-labelledby="runner-title">
+    <form method="dialog">
+      <div class="runner-header">
+        <h3 id="runner-title">Runner</h3>
+        <button type="button" id="runner-pin" class="runner-pin" aria-pressed="false" title="Keep open after each run (or use Shift+Enter for one keep-open run)" aria-label="Keep runner open after each run">📌</button>
+      </div>
+      <div class="runner-hint muted">Type a snippet or chain name.
+Enter runs, Esc cancels.
+Shift+Enter runs and stays open.</div>
+      <div class="runner-chips">
+        <span class="runner-chips-label muted">Show:</span>
+        <button type="button" id="runner-chip-snippets" class="runner-chip active" aria-pressed="true" title="Include snippets in the list">Snippets</button>
+        <button type="button" id="runner-chip-chains" class="runner-chip active" aria-pressed="true" title="Include chains in the list">Chains</button>
+      </div>
+      <div class="runner-combo">
+        <input id="runner-input" type="text" placeholder="Name…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="runner-dropdown" aria-expanded="true">
+        <ul id="runner-dropdown" role="listbox"></ul>
+      </div>
+      <menu>
+        <button type="submit" value="cancel" id="runner-cancel" formnovalidate>Cancel</button>
+        <button type="button" id="runner-apply" class="primary">Apply</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="welcome-dialog" aria-labelledby="welcome-title">
+    <form method="dialog" class="welcome-form">
+      <h2 id="welcome-title">Welcome to Awk-estra</h2>
+      <p class="welcome-lede">
+        A hands-on playground for running <code>awk</code> on text — paste in a
+        log, CSV, or code file, then transform it with saved snippets, ad-hoc
+        programs from the command palette, or multi-step pipelines you can
+        save as reusable chains.
+      </p>
+
+      <h3>Three ways to transform text</h3>
+      <p class="welcome-note">
+        No selection? The whole buffer is used as input.
+      </p>
+      <ol class="welcome-steps">
+        <li>
+          <strong>Quick transforms (<span class="kbd" data-mod>Ctrl</span>+<span class="kbd">K</span>)</strong>
+          — Select some lines in the editor, press the shortcut, type a short
+          awk program, and hit Enter to replace the selection. Example:
+          <code>{ print toupper($0) }</code>.
+        </li>
+        <li>
+          <strong>Saved snippets</strong>
+          — Click a snippet in the sidebar to run it on the current selection.
+          <span class="kbd" data-mod>Ctrl</span>+click runs it with no input
+          and inserts the output at the cursor — handy for snippets that
+          generate text (e.g. a <code>BEGIN</code>-only program).
+          Hover a row for Edit / Duplicate / Add-to-pipeline / Delete. Click
+          the <span class="welcome-icon">★</span> to favourite for quick access.
+        </li>
+        <li>
+          <strong>Pipelines &amp; chains</strong>
+          — Click <span class="welcome-icon">→</span> on snippets to stack them
+          into the pipeline panel below the editor. Run the whole pipeline
+          with <em>Run &amp; Apply</em>, then save it as a reusable chain.
+        </li>
+      </ol>
+
+      <h3>Keyboard shortcuts</h3>
+      <table class="welcome-kbd-table">
+        <tbody>
+          <tr><td><span class="kbd" data-mod>Ctrl</span>+<span class="kbd">K</span></td><td>Open the command palette (ad-hoc awk). Press again while open to toggle advanced / simple view.</td></tr>
+          <tr><td><span class="kbd" data-mod>Ctrl</span>+<span class="kbd">O</span></td><td>Open the Snippet Runner — type a snippet name, Enter to run on selection.</td></tr>
+          <tr><td><span class="kbd" data-mod>Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">O</span></td><td>Open the Snippet Runner in insert-at-cursor mode — output is inserted at the cursor (no input is fed in).</td></tr>
+          <tr><td><span class="kbd" data-mod>Ctrl</span>+<span class="kbd">F</span></td><td>Find in editor</td></tr>
+          <tr><td><span class="kbd" data-mod>Ctrl</span>+<span class="kbd">H</span></td><td>Find &amp; replace</td></tr>
+          <tr><td><span class="kbd" data-mod>Ctrl</span>+<span class="kbd">G</span></td><td>Go to line</td></tr>
+          <tr><td><span class="kbd" data-mod>Ctrl</span>+<span class="kbd">Z</span></td><td>Undo (native textarea stack)</td></tr>
+          <tr><td><span class="kbd">Tab</span> / <span class="kbd">Shift</span>+<span class="kbd">Tab</span></td><td>Indent / outdent (multi-line selection: block; otherwise insert/remove a tab)</td></tr>
+          <tr><td><span class="kbd">Esc</span> then <span class="kbd">Tab</span></td><td>Move focus out of the editor (one-shot — captures Tab again on next focus)</td></tr>
+          <tr><td><span class="kbd">Esc</span></td><td>Close the open palette / find panel</td></tr>
+        </tbody>
+      </table>
+
+      <p class="welcome-footer">
+        This guide is always available from the <strong>?</strong> button in
+        the header.
+      </p>
+
+      <menu>
+        <button type="submit" value="ok" class="primary">Got it</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

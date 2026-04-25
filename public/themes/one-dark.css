@@ -1,0 +1,22 @@
+/* name: One Dark */
+[data-theme="one-dark"] {
+  --bg: #282c34;
+  --panel: #21252b;
+  --panel-2: #2c313a;
+  --border: #3e4451;
+  --text: #abb2bf;
+  --muted: #5c6370;
+  --accent: #61afef;
+  --accent-dim: #3e4c60;
+  --danger: #e06c75;
+  --btn-bg: #21252b;
+  --btn-bg-hover: #2c313a;
+  --tok-keyword: #c678dd;
+  --tok-builtin: #56b6c2;
+  --tok-var: #e06c75;
+  --tok-field: #d19a66;
+  --tok-string: #98c379;
+  --tok-regex: #c678dd;
+  --tok-comment: #5c6370;
+  --tok-number: #d19a66;
+}

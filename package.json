@@ -1,0 +1,32 @@
+{
+  "name": "awk-estra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local browser UI for composing, previewing, and chaining awk programs against editable text tabs.",
+  "author": "Gareth",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:unsafe": "node server.js --unsafe",
+    "start:prod": "NODE_ENV=production node server.js",
+    "typecheck": "tsc -p jsconfig.json",
+    "lint": "eslint public/js server.js test",
+    "lint:fix": "eslint --fix public/js server.js test",
+    "format": "prettier --write public/js server.js test",
+    "format:check": "prettier --check public/js server.js test",
+    "test": "node --test --import ./test/setup.js test/unit/*.test.js test/server.test.js",
+    "test:unit": "node --test --import ./test/setup.js test/unit/*.test.js",
+    "test:server": "node --test test/server.test.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.11.0",
+    "eslint": "^9.11.0",
+    "globals": "^15.9.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.4.0"
+  }
+}

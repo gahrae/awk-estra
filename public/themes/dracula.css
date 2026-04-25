@@ -1,0 +1,22 @@
+/* name: Dracula */
+[data-theme="dracula"] {
+  --bg: #282a36;
+  --panel: #343746;
+  --panel-2: #44475a;
+  --border: #6272a4;
+  --text: #f8f8f2;
+  --muted: #6272a4;
+  --accent: #bd93f9;
+  --accent-dim: #44475a;
+  --danger: #ff5555;
+  --btn-bg: #44475a;
+  --btn-bg-hover: #6272a4;
+  --tok-keyword: #ff79c6;
+  --tok-builtin: #8be9fd;
+  --tok-var: #50fa7b;
+  --tok-field: #f1fa8c;
+  --tok-string: #f1fa8c;
+  --tok-regex: #ff79c6;
+  --tok-comment: #6272a4;
+  --tok-number: #bd93f9;
+}

@@ -1,0 +1,22 @@
+/* name: Gruvbox Dark */
+[data-theme="gruvbox-dark"] {
+  --bg: #282828;
+  --panel: #1d2021;
+  --panel-2: #3c3836;
+  --border: #504945;
+  --text: #ebdbb2;
+  --muted: #928374;
+  --accent: #b8bb26;
+  --accent-dim: #504945;
+  --danger: #fb4934;
+  --btn-bg: #3c3836;
+  --btn-bg-hover: #504945;
+  --tok-keyword: #fb4934;
+  --tok-builtin: #fabd2f;
+  --tok-var: #83a598;
+  --tok-field: #fe8019;
+  --tok-string: #b8bb26;
+  --tok-regex: #d3869b;
+  --tok-comment: #928374;
+  --tok-number: #d3869b;
+}

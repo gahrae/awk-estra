@@ -1,0 +1,41 @@
+/* name: Solarized Light */
+[data-theme="solarized-light"] {
+  --bg: #fdf6e3;
+  --panel: #eee8d5;
+  --panel-2: #e4dfc3;
+  --border: #93a1a1;
+  --text: #586e75;
+  --muted: #839496;
+  --accent: #2aa198;
+  --accent-dim: #b5ddd7;
+  --danger: #dc322f;
+  --btn-bg: #eee8d5;
+  --btn-bg-hover: #e4dfc3;
+  --tok-keyword: #859900;
+  --tok-builtin: #268bd2;
+  --tok-var: #b58900;
+  --tok-field: #cb4b16;
+  --tok-string: #2aa198;
+  --tok-regex: #d33682;
+  --tok-comment: #93a1a1;
+  --tok-number: #d33682;
+
+  --selection-bg: rgba(38, 139, 210, 0.22);
+  --primary-btn-text: #002b36;
+  --banner-bg: #fbe5cd;
+  --banner-text: #7f1e00;
+  --banner-link-hover: var(--danger);
+  --banner-strong-text: var(--danger);
+  --cp-field-0: rgba(38, 139, 210, 0.08);
+  --cp-field-1: rgba(203, 75, 22, 0.10);
+  --cp-field-2: rgba(133, 153, 0, 0.10);
+  --cp-field-3: rgba(181, 137, 0, 0.10);
+  --cp-field-4: rgba(108, 113, 196, 0.10);
+  --cp-field-5: rgba(42, 161, 152, 0.10);
+  --fp-field-0: rgba(38, 139, 210, 0.14);
+  --fp-field-1: rgba(203, 75, 22, 0.16);
+  --fp-field-2: rgba(133, 153, 0, 0.16);
+  --fp-field-3: rgba(181, 137, 0, 0.16);
+  --fp-field-4: rgba(108, 113, 196, 0.16);
+  --fp-field-5: rgba(42, 161, 152, 0.16);
+}

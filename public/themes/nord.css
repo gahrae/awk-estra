@@ -1,0 +1,22 @@
+/* name: Nord */
+[data-theme="nord"] {
+  --bg: #2e3440;
+  --panel: #3b4252;
+  --panel-2: #434c5e;
+  --border: #4c566a;
+  --text: #eceff4;
+  --muted: #7b869c;
+  --accent: #88c0d0;
+  --accent-dim: #4c566a;
+  --danger: #bf616a;
+  --btn-bg: #3b4252;
+  --btn-bg-hover: #434c5e;
+  --tok-keyword: #81a1c1;
+  --tok-builtin: #8fbcbb;
+  --tok-var: #5e81ac;
+  --tok-field: #ebcb8b;
+  --tok-string: #a3be8c;
+  --tok-regex: #d08770;
+  --tok-comment: #616e88;
+  --tok-number: #b48ead;
+}

@@ -1,0 +1,22 @@
+/* name: Tokyo Night */
+[data-theme="tokyo-night"] {
+  --bg: #1a1b26;
+  --panel: #24283b;
+  --panel-2: #2f334d;
+  --border: #414868;
+  --text: #c0caf5;
+  --muted: #565f89;
+  --accent: #7aa2f7;
+  --accent-dim: #3d5a94;
+  --danger: #f7768e;
+  --btn-bg: #24283b;
+  --btn-bg-hover: #414868;
+  --tok-keyword: #bb9af7;
+  --tok-builtin: #7dcfff;
+  --tok-var: #7aa2f7;
+  --tok-field: #e0af68;
+  --tok-string: #9ece6a;
+  --tok-regex: #f7768e;
+  --tok-comment: #565f89;
+  --tok-number: #ff9e64;
+}

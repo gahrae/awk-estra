@@ -1,0 +1,41 @@
+/* name: GitHub Light */
+[data-theme="github-light"] {
+  --bg: #ffffff;
+  --panel: #f6f8fa;
+  --panel-2: #eaeef2;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --muted: #6e7781;
+  --accent: #0969da;
+  --accent-dim: #b6e3ff;
+  --danger: #cf222e;
+  --btn-bg: #f6f8fa;
+  --btn-bg-hover: #eaeef2;
+  --tok-keyword: #cf222e;
+  --tok-builtin: #8250df;
+  --tok-var: #0550ae;
+  --tok-field: #953800;
+  --tok-string: #0a3069;
+  --tok-regex: #cf222e;
+  --tok-comment: #6e7781;
+  --tok-number: #0550ae;
+
+  --selection-bg: rgba(9, 105, 218, 0.25);
+  --primary-btn-text: #063b33;
+  --banner-bg: #ffebe9;
+  --banner-text: #82071e;
+  --banner-link-hover: var(--danger);
+  --banner-strong-text: var(--danger);
+  --cp-field-0: rgba(9, 105, 218, 0.08);
+  --cp-field-1: rgba(161, 77, 36, 0.10);
+  --cp-field-2: rgba(77, 122, 51, 0.10);
+  --cp-field-3: rgba(149, 98, 0, 0.10);
+  --cp-field-4: rgba(130, 80, 223, 0.10);
+  --cp-field-5: rgba(24, 138, 121, 0.10);
+  --fp-field-0: rgba(9, 105, 218, 0.14);
+  --fp-field-1: rgba(161, 77, 36, 0.16);
+  --fp-field-2: rgba(77, 122, 51, 0.16);
+  --fp-field-3: rgba(149, 98, 0, 0.16);
+  --fp-field-4: rgba(130, 80, 223, 0.16);
+  --fp-field-5: rgba(24, 138, 121, 0.16);
+}

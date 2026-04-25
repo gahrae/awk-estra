@@ -1,0 +1,43 @@
+/* name: Light */
+[data-theme="light"] {
+  --bg: #ffffff;
+  --panel: #f4f4f4;
+  --panel-2: #e8e8e8;
+  --border: #cccccc;
+  --text: #222222;
+  --muted: #666666;
+  --accent: #188a79;
+  --accent-dim: #b2e0d7;
+  --danger: #c5391e;
+  --btn-bg: #e0e0e0;
+  --btn-bg-hover: #d0d0d0;
+  --tok-keyword: #8b22c7;
+  --tok-builtin: #126e5f;
+  --tok-var: #005eb8;
+  --tok-field: #956200;
+  --tok-string: #a14d24;
+  --tok-regex: #b23030;
+  --tok-comment: #4d7a33;
+  --tok-number: #217e00;
+
+  /* Light-surface tunings — the defaults in style.css are picked for
+     a dark surface, so re-specify for readability on white. */
+  --selection-bg: rgba(80, 130, 220, 0.3);
+  --primary-btn-text: #063b33;
+  --banner-bg: #fde5e0;
+  --banner-text: #6a1e0a;
+  --banner-link-hover: var(--danger);
+  --banner-strong-text: var(--danger);
+  --cp-field-0: rgba(0, 94, 184, 0.08);
+  --cp-field-1: rgba(161, 77, 36, 0.10);
+  --cp-field-2: rgba(77, 122, 51, 0.10);
+  --cp-field-3: rgba(149, 98, 0, 0.10);
+  --cp-field-4: rgba(139, 34, 199, 0.10);
+  --cp-field-5: rgba(24, 138, 121, 0.10);
+  --fp-field-0: rgba(0, 94, 184, 0.14);
+  --fp-field-1: rgba(161, 77, 36, 0.16);
+  --fp-field-2: rgba(77, 122, 51, 0.16);
+  --fp-field-3: rgba(149, 98, 0, 0.16);
+  --fp-field-4: rgba(139, 34, 199, 0.16);
+  --fp-field-5: rgba(24, 138, 121, 0.16);
+}

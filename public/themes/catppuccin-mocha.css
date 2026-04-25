@@ -1,0 +1,22 @@
+/* name: Catppuccin Mocha */
+[data-theme="catppuccin-mocha"] {
+  --bg: #1e1e2e;
+  --panel: #181825;
+  --panel-2: #313244;
+  --border: #45475a;
+  --text: #cdd6f4;
+  --muted: #7f849c;
+  --accent: #89b4fa;
+  --accent-dim: #45475a;
+  --danger: #f38ba8;
+  --btn-bg: #313244;
+  --btn-bg-hover: #45475a;
+  --tok-keyword: #cba6f7;
+  --tok-builtin: #89dceb;
+  --tok-var: #f5c2e7;
+  --tok-field: #f9e2af;
+  --tok-string: #a6e3a1;
+  --tok-regex: #fab387;
+  --tok-comment: #6c7086;
+  --tok-number: #fab387;
+}

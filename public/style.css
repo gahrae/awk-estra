@@ -1,0 +1,4047 @@
+/* Stacking: the textarea lives in normal flow and drives the wrap's
+   intrinsic height (via autosize or a fixed/percent height from context).
+   The pre is absolute-positioned on top, pinned to the wrap's inset-0
+   bounds, so its tall content never inflates the wrap beyond the
+   textarea's visible area — tall templates in the palette stay clipped
+   inside the textarea and scroll sync handles the rest. */
+.hl-wrap {
+  position: relative;
+  width: 100%;
+}
+.hl-wrap > .hl-pre {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+}
+.hl-wrap > .hl-textarea {
+  position: relative;
+  min-width: 0;
+}
+.hl-pre {
+  margin: 0;
+  color: var(--text);
+  pointer-events: none;
+  overflow: hidden;
+  scrollbar-gutter: stable;
+  white-space: pre;
+  word-wrap: normal;
+  word-break: normal;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  /* Mirror the underlying textarea's tab-size so tab stops line up.
+     Without this the overlay renders tabs at CSS's default 8-column
+     stops while the textarea uses `--editor-tab-size` (default 4,
+     configurable to 2 / 3 / ...). The two layers drift after each
+     tab and the visible text (painted by the overlay) appears
+     offset from the caret (positioned by the textarea). */
+  tab-size: var(--editor-tab-size, 4);
+}
+/* Scroll sync is a transform on this inner wrapper rather than pre.scrollTop.
+   Transforms are composited, so the overlay updates in the same frame as the
+   textarea's native scroll — eliminating the one-frame lag that caused the
+   highlight layer to visibly trail the cursor during fast scrolls.
+
+   No `will-change: transform`: promoting the layer eagerly causes Chrome to
+   rasterize it at fractional pixel origins (when the parent pre's grid
+   position isn't integer-aligned), producing visibly blurred text even at
+   rest. The browser still composites on demand when the transform is
+   actually applied — we just don't force the layer up front. */
+.hl-pre-inner {
+  display: block;
+}
+/* ID-level selectors have to be listed here explicitly to out-rank
+   per-textarea `#foo { background: var(--bg) }` rules. Any awk-program
+   textarea that carries its own ID-scoped background must be added here
+   so the overlay can show through. */
+.hl-textarea,
+#editor.hl-textarea,
+#palette-input.hl-textarea {
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  scrollbar-gutter: stable;
+  width: 100%;
+  display: block;
+  /* Match the overlay `<pre>`'s tab-size so caret and painted glyph
+     stop at the same column. Defaults to 4 when the custom property
+     isn't set (e.g. pre-settings render). */
+  tab-size: var(--editor-tab-size, 4);
+}
+/* The `color: transparent` above hides the textarea's own text so the
+   overlay <pre> can paint it — but the placeholder is painted by the
+   textarea, not the overlay, so it inherits the transparent color and
+   disappears. Restore it explicitly. */
+.hl-textarea::placeholder,
+#editor.hl-textarea::placeholder,
+#palette-input.hl-textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+/* The textarea's text is `color: transparent` (the highlight overlay paints
+   the visible characters via the underlying <pre>). For selected text we
+   want the *same* invariant — let the pre keep being the sole renderer of
+   the characters, and use the selection background as a translucent tint
+   over them. Setting `color: var(--text)` here would make the textarea
+   re-paint the selected text on top of the pre, producing a faux-bold /
+   double-rendered look from the sub-pixel offset between layers. */
+.hl-textarea::selection,
+#editor.hl-textarea::selection {
+  background: var(--selection-bg, rgba(38, 79, 120, 0.45));
+  color: transparent;
+}
+
+/* ---------- Toast notifications ---------- */
+#toasts {
+  position: fixed;
+  top: 3rem;
+  right: 1rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  max-width: 520px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  padding: calc(0.55rem * var(--density-scale, 1)) calc(0.75rem * var(--density-scale, 1));
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  display: flex;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  align-items: flex-start;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  animation: toast-in 0.14s ease-out;
+  /* User can drag the bottom edge to reveal more of a long message. Capped
+     at viewport height; shrinking works too via the same handle. */
+  resize: vertical;
+  overflow: hidden;
+  min-height: 2.5rem;
+  max-height: 80vh;
+}
+.toast.level-info { border-left-color: var(--accent); }
+.toast.pinned { border-left-width: 4px; }
+.toast-content {
+  flex: 1;
+  min-width: 0;
+  /* Column so the body can take up any vertical slack when the toast is
+     resized taller. Without this, `.toast-body flex: 1` has nothing to
+     fill and the user's drag yields dead whitespace below the text. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.toast-title { font-weight: 600; margin-bottom: calc(0.15rem * var(--density-scale, 1)); }
+.toast-body {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.78rem * var(--density-scale, 1));
+  color: var(--muted);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.toast-pin,
+.toast-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 calc(0.25rem * var(--density-scale, 1));
+  line-height: 1;
+}
+.toast-close { font-size: calc(1rem * var(--density-scale, 1)); }
+.toast-pin {
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  opacity: 0.65;
+  filter: grayscale(1);
+  transition: opacity 0.1s ease, filter 0.1s ease;
+}
+.toast-pin:hover { opacity: 1; }
+.toast.pinned .toast-pin {
+  opacity: 1;
+  filter: none;
+  transform: rotate(-20deg);
+}
+.toast-close:hover { color: var(--text); }
+.toast-action {
+  align-self: center;
+  margin-right: calc(0.3rem * var(--density-scale, 1));
+  padding: calc(0.25rem * var(--density-scale, 1)) calc(0.6rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toast-action:hover { border-color: var(--accent); color: var(--accent); }
+@keyframes toast-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+#snippets li.pulse-error,
+#chains li.pulse-error {
+  animation: sidebar-pulse-error 0.9s ease-out;
+}
+@keyframes sidebar-pulse-error {
+  0%   { background: transparent; }
+  25%  { background: rgba(244, 135, 113, 0.45); }
+  100% { background: transparent; }
+}
+/* Positive counterpart: flash an accent tint around a just-created item
+   so the user's eye is drawn to it after an action like "Save as snippet". */
+#palette-library li.pulse-success,
+#palette-history li.pulse-success,
+#snippets li.pulse-success,
+#chains li.pulse-success,
+#text-snippets li.pulse-success,
+#templates li.pulse-success,
+#pipeline-steps li.pulse-success {
+  animation: sidebar-pulse-success 1.2s ease-out;
+}
+@keyframes sidebar-pulse-success {
+  0%   { background: transparent; box-shadow: 0 0 0 0 transparent; }
+  20%  { background: var(--accent-dim, rgba(78, 201, 176, 0.35));
+         box-shadow: 0 0 0 2px var(--accent); }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}
+
+#editor-area.wrap-on #editor,
+#editor-area.wrap-on .hl-pre {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.wrap-endline {
+  display: inline-block;
+  width: 0;
+  overflow: visible;
+  color: var(--muted);
+  opacity: 0.4;
+  pointer-events: none;
+  font-size: calc(0.9em * var(--density-scale, 1));
+}
+#wrap-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.find-current {
+  background: #f2b32f;
+  color: #000;
+  border-radius: 2px;
+}
+.find-other {
+  background: rgba(242, 179, 47, 0.3);
+  border-radius: 2px;
+}
+
+.tok-keyword { color: var(--tok-keyword); }
+.tok-builtin { color: var(--tok-builtin); }
+.tok-var     { color: var(--tok-var); }
+.tok-field   { color: var(--tok-field); }
+.tok-string  { color: var(--tok-string); }
+.tok-regex   { color: var(--tok-regex); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-number  { color: var(--tok-number); }
+
+/* Fallback palette (matches the Dark theme in themes/dark.css). The
+   active theme is selected by `<html data-theme="…">` and each theme
+   file (loaded via /themes.css) sets these same vars inside a
+   `[data-theme="…"]` block. If the saved theme id doesn't match any
+   loaded file, these fallbacks keep the app legible rather than
+   collapsing to browser defaults. */
+:root {
+  --bg: #1e1e1e;
+  --panel: #252526;
+  --panel-2: #2d2d2d;
+  --border: #3a3a3a;
+  --text: #d4d4d4;
+  --muted: #888;
+  --accent: #4ec9b0;
+  --accent-dim: #2d6a5f;
+  --danger: #f48771;
+  --btn-bg: #333;
+  --btn-bg-hover: #444;
+  --tok-keyword: #c586c0;
+  --tok-builtin: #4ec9b0;
+  --tok-var: #569cd6;
+  --tok-field: #dcdcaa;
+  --tok-string: #ce9178;
+  --tok-regex: #d16969;
+  --tok-comment: #6a9955;
+  --tok-number: #b5cea8;
+  /* UI chrome density. Normal is the baseline — the original hard-coded
+     values in each site. `.density-compact` / `.density-roomy` on <body>
+     override these below. Every consumer site reads through var() with
+     the normal value as its own fallback, so a missing custom property
+     (fresh install, old settings blob) degrades to the current look.
+
+     Two layers:
+       - `--density-scale`: global multiplier applied to most font-size /
+         padding / margin / gap values via `calc(X * var(--density-scale))`.
+         One knob, covers every site that opts in via the bulk-wrap pass.
+       - Named `--density-*` tokens: per-site overrides for hand-tuned
+         surfaces (sidebar rows, tabs, pipeline, find panel) whose
+         linear scaling didn't look right. These win on their sites
+         because they replace the `padding`/`gap` value entirely —
+         the scale multiplier never gets a chance to fire. */
+  --density-scale: 1;
+  --density-btn-pad-y: 0.2rem;
+  --density-btn-pad-x: 0.55rem;
+  --density-btn-font-size: 0.82rem;
+  --density-sidebar-row-pad-y: 0.25rem;
+  --density-sidebar-row-pad-x: 0.35rem;
+  --density-section-head-pad-y: 0.25rem;
+  /* Tabs: left padding wider than right to leave room for the pin dot. */
+  --density-tab-pad-y: 0.25rem;
+  --density-tab-pad-x-right: 0.4rem;
+  --density-tab-pad-x-left: 0.6rem;
+  --density-pipeline-pad-y: 0.5rem;
+  --density-pipeline-pad-x: 0.75rem;
+  --density-pipeline-step-pad-y: 0.2rem;
+  --density-pipeline-step-pad-x: 0.4rem;
+  --density-find-pad-y: 0.35rem;
+  --density-find-pad-x: 0.5rem;
+}
+body.density-compact {
+  --density-scale: 0.8;
+  --density-btn-pad-y: 0.1rem;
+  --density-btn-pad-x: 0.4rem;
+  --density-btn-font-size: 0.78rem;
+  --density-sidebar-row-pad-y: 0.12rem;
+  --density-sidebar-row-pad-x: 0.3rem;
+  --density-section-head-pad-y: 0.12rem;
+  --density-tab-pad-y: 0.12rem;
+  --density-tab-pad-x-right: 0.3rem;
+  --density-tab-pad-x-left: 0.45rem;
+  --density-pipeline-pad-y: 0.3rem;
+  --density-pipeline-pad-x: 0.5rem;
+  --density-pipeline-step-pad-y: 0.1rem;
+  --density-pipeline-step-pad-x: 0.3rem;
+  --density-find-pad-y: 0.2rem;
+  --density-find-pad-x: 0.4rem;
+}
+body.density-roomy {
+  --density-scale: 1.2;
+  --density-btn-pad-y: 0.35rem;
+  --density-btn-pad-x: 0.8rem;
+  --density-btn-font-size: 0.9rem;
+  --density-sidebar-row-pad-y: 0.45rem;
+  --density-sidebar-row-pad-x: 0.55rem;
+  --density-section-head-pad-y: 0.45rem;
+  --density-tab-pad-y: 0.4rem;
+  --density-tab-pad-x-right: 0.6rem;
+  --density-tab-pad-x-left: 0.8rem;
+  --density-pipeline-pad-y: 0.7rem;
+  --density-pipeline-pad-x: 1rem;
+  --density-pipeline-step-pad-y: 0.35rem;
+  --density-pipeline-step-pad-x: 0.6rem;
+  --density-find-pad-y: 0.5rem;
+  --density-find-pad-x: 0.7rem;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: calc(1rem * var(--density-scale, 1));
+  padding: calc(0.5rem * var(--density-scale, 1)) calc(1rem * var(--density-scale, 1));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+header h1 { margin: 0; font-size: calc(1rem * var(--density-scale, 1)); font-weight: 500; }
+.header-actions { margin-left: auto; display: flex; gap: calc(0.3rem * var(--density-scale, 1)); }
+
+/* Input-mode toggle. The `input-mode-all` class paints the button in
+   accent colours so a user glancing at the toolbar can tell at once
+   that "All Tabs" is live — this mode changes what every run
+   consumes, and silently carrying it is the single biggest footgun of
+   the feature. `input-mode-selection` dims the toggle slightly to
+   signal that the selection is currently overriding the backing mode;
+   clicks still flip the backing mode so the user can pre-set what
+   applies when they deselect. */
+#input-mode-btn.input-mode-all {
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  border-color: var(--accent);
+}
+#input-mode-btn.input-mode-selection {
+  opacity: 0.75;
+  font-style: italic;
+}
+
+/* Tab-strip marker for excluded tabs (skipped when All Tabs input
+   gathers). Muted circled-slash before the title via ::before so the
+   DOM in renderTabs doesn't need to know about it. Unobtrusive —
+   quiet state the user notices only when looking for it. */
+.tab.excluded .tab-title::before {
+  content: '⊘ ';
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: var(--sidebar-width, 260px) 5px 1fr;
+  min-height: 0;
+}
+
+/* Toggled by the sidebar collapse / show buttons (and the Mod+B
+   system shortcut): drop the sidebar + resizer out of the layout and
+   collapse the grid to a single 1fr track so the editor takes the
+   full width. Keeping three zero-width tracks here would be wrong —
+   grid auto-placement would put #editor-area into track 1 (0px wide)
+   and the entire editor would render as a narrow strip at the left
+   edge while the viewport stays empty to the right. */
+body.sidebar-hidden main {
+  grid-template-columns: 1fr;
+}
+body.sidebar-hidden #sidebar,
+body.sidebar-hidden #resizer {
+  display: none;
+}
+
+/* Sidebar collapse / show buttons. The collapse button (◀) is flush
+   to the top-right inside the sidebar itself. The show button (▶) is
+   absolute-positioned at the top-left corner of the editor area and
+   only surfaces when `body.sidebar-hidden` — it's the only way the
+   user can bring the sidebar back without the Mod+B shortcut, so it
+   must stay visible and on top of the tabs bar. A left-padding tweak
+   on #tabs pushes the first tab over to make room. */
+.sidebar-head {
+  display: flex;
+  justify-content: flex-end;
+  margin: calc(-0.25rem * var(--density-scale, 1)) calc(-0.25rem * var(--density-scale, 1)) calc(0.25rem * var(--density-scale, 1));
+}
+#sidebar-collapse-btn {
+  padding: 0 calc(0.45rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  line-height: 1.6;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+#sidebar-collapse-btn:hover {
+  color: var(--text);
+  background: var(--btn-bg-hover);
+  border-color: var(--border);
+}
+#sidebar-show-btn {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 5;
+  padding: 0 calc(0.45rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  line-height: 1.6;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  display: none;
+}
+#sidebar-show-btn:hover {
+  color: var(--text);
+  background: var(--btn-bg-hover);
+}
+body.sidebar-hidden #sidebar-show-btn {
+  display: inline-block;
+}
+body.sidebar-hidden #tabs {
+  padding-left: calc(2rem * var(--density-scale, 1));
+}
+
+#resizer {
+  background: var(--border);
+  cursor: col-resize;
+  transition: background 0.12s;
+}
+#resizer:hover, #resizer.active { background: var(--accent); }
+
+#sidebar {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: calc(0.5rem * var(--density-scale, 1));
+  background: var(--panel);
+}
+#sidebar-search-row { margin-bottom: calc(0.25rem * var(--density-scale, 1)); }
+.sidebar-search-scope {
+  display: flex;
+  align-items: center;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  margin-bottom: calc(0.5rem * var(--density-scale, 1));
+  flex-wrap: wrap;
+}
+.sidebar-search-scope-label { font-size: calc(0.7rem * var(--density-scale, 1)); }
+.sidebar-scope-toggle {
+  background: var(--btn-bg);
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: calc(0.05rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.sidebar-scope-toggle:hover { background: var(--btn-bg-hover); color: var(--text); }
+.sidebar-scope-toggle.active {
+  background: var(--accent-dim);
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+/* Generic "×"-clear button inside a filter input. Visible only when the
+   input has a value (via `:placeholder-shown` sibling selector — no JS
+   for show/hide). A single document-delegated click handler in main.js
+   clears the input and dispatches an `input` event so existing filter
+   listeners re-render. Padding reserved on the input so text doesn't
+   slide under the button. */
+.filter-field {
+  position: relative;
+  display: block;
+}
+.filter-field > input { padding-right: calc(1.7rem * var(--density-scale, 1)); box-sizing: border-box; }
+.filter-field > .filter-clear {
+  position: absolute;
+  right: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 calc(0.35rem * var(--density-scale, 1));
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  line-height: 1;
+  border-radius: 3px;
+}
+.filter-field > .filter-clear:hover { color: var(--text); background: var(--btn-bg-hover); }
+.filter-field > input:placeholder-shown ~ .filter-clear { display: none; }
+
+#sidebar-search {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.45rem * var(--density-scale, 1));
+  font-family: inherit;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  outline: none;
+}
+#sidebar-search:focus { border-color: var(--accent); }
+#sidebar section { margin-bottom: calc(1rem * var(--density-scale, 1)); }
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--density-section-head-pad-y, 0.25rem) 0;
+}
+section[data-section] > .section-head { cursor: pointer; user-select: none; }
+.section-head .caret {
+  color: var(--muted);
+  font-size: calc(0.65rem * var(--density-scale, 1));
+  margin-right: calc(0.3rem * var(--density-scale, 1));
+  transition: transform 0.12s;
+  display: inline-block;
+  width: 0.9rem;
+  text-align: center;
+}
+section.collapsed > .section-head .caret { transform: rotate(-90deg); }
+section.collapsed > ul,
+section.collapsed > div:not(.section-head),
+section.collapsed > #snippets { display: none; }
+.section-head h2 {
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0;
+  color: var(--muted);
+  flex: 1;
+}
+
+#snippets, #chains, #text-snippets, #templates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Tag-grouped snippets sidebar. Each tag is a <details> wrapping an inner
+   <ul>; the existing `#snippets li` rules below still match snippet rows
+   nested inside, so per-row styles need no changes. */
+.sidebar-tag-group { margin: calc(0.05rem * var(--density-scale, 1)) 0; }
+.sidebar-tag-summary {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: baseline;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.35rem * var(--density-scale, 1));
+  border-radius: 3px;
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.sidebar-tag-summary:hover,
+.sidebar-tag-summary:has(:focus-visible) { color: var(--text); background: var(--panel-2); }
+.sidebar-tag-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-tag-count { font-size: calc(0.7rem * var(--density-scale, 1)); }
+/* Absolute-positioned so its presence doesn't shift the count while hidden;
+   the count stays right-aligned until hover reveals the actions on top. */
+.sidebar-tag-actions {
+  position: absolute;
+  right: 0.35rem;
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--panel-2);
+  box-shadow: -8px 0 8px -2px var(--panel-2);
+  transition: opacity 0.1s;
+}
+.sidebar-tag-summary:hover .sidebar-tag-actions,
+.sidebar-tag-summary:has(:focus-visible) .sidebar-tag-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sidebar-tag-action {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 calc(0.3rem * var(--density-scale, 1));
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.sidebar-tag-action:hover { background: var(--btn-bg-hover); color: var(--text); }
+.sidebar-tag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 calc(0.1rem * var(--density-scale, 1)) calc(0.3rem * var(--density-scale, 1));
+}
+
+/* Drag items between tag groups to re-tag them. `.dragging` dims the source
+   row; `.tag-drop-target` highlights the group (summary + children) the
+   drop would land on. */
+#snippets li.dragging,
+#chains li.dragging,
+#templates li.dragging { opacity: 0.4; }
+.sidebar-tag-group.tag-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  border-radius: 3px;
+  background: var(--accent-dim);
+}
+
+/* Scope row (T · Templates / S · Snippets) sits directly under the palette
+   section summary — it controls which kinds feed the chip list below. Using
+   the sidebar-scope-toggle pill style keeps it visually distinct from the
+   tag-filter row that follows it. */
+.palette-scope-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  padding: calc(0.25rem * var(--density-scale, 1)) 0;
+}
+.palette-scope-label { font-size: calc(0.7rem * var(--density-scale, 1)); }
+
+/* Palette tag chip filter row. Click a chip to restrict the list to
+   that tag; click again (or click "All") to clear. Hidden when no
+   snippet / template has any tag. When preceded by the scope row, a
+   top border visually separates "type" controls from "tag" controls so
+   the tag chips don't read as part of the same pill group. */
+.palette-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  padding: calc(0.25rem * var(--density-scale, 1)) 0;
+}
+.palette-tag-filter.palette-tag-filter-divided {
+  border-top: 1px solid var(--border);
+  padding-top: calc(0.35rem * var(--density-scale, 1));
+  margin-top: calc(0.1rem * var(--density-scale, 1));
+}
+.palette-tag-filter[hidden] {
+  display: none;
+}
+.palette-tag-chip {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: calc(0.1rem * var(--density-scale, 1)) calc(0.55rem * var(--density-scale, 1));
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.palette-tag-chip:hover { background: var(--btn-bg-hover); }
+.palette-tag-chip.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.sidebar-star {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  line-height: 1;
+  flex: 0 0 auto;
+  opacity: 0.3;
+  transition: color 0.1s, opacity 0.1s, background 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  padding: 0 calc(0.3rem * var(--density-scale, 1));
+  align-self: stretch;
+  margin: calc(-0.25rem * var(--density-scale, 1)) calc(-0.25rem * var(--density-scale, 1)) calc(-0.25rem * var(--density-scale, 1)) calc(-0.35rem * var(--density-scale, 1));
+  border-radius: 3px 0 0 3px;
+}
+.sidebar-star:hover {
+  color: var(--text);
+  opacity: 1;
+  background: var(--btn-bg-hover);
+}
+.sidebar-star.active { color: #f5a623; opacity: 1; }
+
+#snippets li, #chains li, #text-snippets li, #templates li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  padding: var(--density-sidebar-row-pad-y, 0.25rem) var(--density-sidebar-row-pad-x, 0.35rem);
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+}
+#snippets li:hover, #chains li:hover, #text-snippets li:hover, #templates li:hover { background: var(--panel-2); }
+#snippets li.list-placeholder, #chains li.list-placeholder, #text-snippets li.list-placeholder, #templates li.list-placeholder {
+  color: var(--muted);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  cursor: default;
+}
+#snippets li.list-placeholder:hover, #chains li.list-placeholder:hover, #text-snippets li.list-placeholder:hover, #templates li.list-placeholder:hover {
+  background: transparent;
+}
+#snippets li .name, #chains li .name, #text-snippets li .name, #templates li .name {
+  flex: 1;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.9rem * var(--density-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#snippets li .actions, #chains li .actions, #text-snippets li .actions, #templates li .actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--panel-2);
+  box-shadow: -8px 0 8px -2px var(--panel-2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+/* Reveal the row's action chips on hover (mouse) or keyboard focus
+   (accessibility). `:has(:focus-visible)` — instead of `:focus-within` —
+   makes the keyboard branch sensitive only to focus rings the browser
+   actually shows (i.e. keyboard-induced focus). Otherwise, after a native
+   `<dialog>` closes, its focus-restoration lands on the action button the
+   user clicked to open the dialog, `:focus-within` lights up, and the
+   chips stay visible until the user clicks somewhere else. */
+#snippets li:hover .actions, #chains li:hover .actions, #text-snippets li:hover .actions, #templates li:hover .actions,
+#snippets li:has(:focus-visible) .actions, #chains li:has(:focus-visible) .actions, #text-snippets li:has(:focus-visible) .actions, #templates li:has(:focus-visible) .actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+#snippets li .actions button,
+#chains li .actions button,
+#text-snippets li .actions button,
+#templates li .actions button {
+  border: none;
+  border-radius: 0;
+  padding: 0 calc(0.45rem * var(--density-scale, 1));
+  margin: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#snippets li .actions button:hover,
+#chains li .actions button:hover,
+#text-snippets li .actions button:hover,
+#templates li .actions button:hover {
+  background: var(--btn-bg-hover);
+}
+
+button {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: var(--density-btn-pad-y, 0.2rem) var(--density-btn-pad-x, 0.55rem);
+  font-size: var(--density-btn-font-size, 0.82rem);
+  font-family: inherit;
+  cursor: pointer;
+  line-height: 1.1;
+}
+button:hover { background: var(--btn-bg-hover); }
+
+/* ---------- welcome dialog ---------- */
+#welcome-dialog {
+  max-width: min(640px, 92vw);
+  width: 640px;
+  max-height: 86vh;
+  padding: calc(1.25rem * var(--density-scale, 1)) calc(1.5rem * var(--density-scale, 1));
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+#welcome-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+#welcome-dialog h2 {
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  font-size: calc(1.25rem * var(--density-scale, 1));
+}
+#welcome-dialog h3 {
+  margin: calc(1rem * var(--density-scale, 1)) 0 calc(0.4rem * var(--density-scale, 1)) 0;
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.welcome-lede { margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0; line-height: 1.45; }
+.welcome-note {
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  color: var(--muted);
+}
+.welcome-steps {
+  margin: 0;
+  padding-left: calc(1.2rem * var(--density-scale, 1));
+  line-height: 1.5;
+}
+.welcome-steps li + li { margin-top: calc(0.5rem * var(--density-scale, 1)); }
+.welcome-steps code {
+  background: var(--panel-2);
+  padding: calc(0.05rem * var(--density-scale, 1)) calc(0.3rem * var(--density-scale, 1));
+  border-radius: 3px;
+  font-size: calc(0.9em * var(--density-scale, 1));
+}
+.welcome-icon {
+  display: inline-block;
+  min-width: 1.2em;
+  text-align: center;
+  color: var(--accent);
+}
+.welcome-kbd-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: calc(0.9rem * var(--density-scale, 1));
+}
+.welcome-kbd-table td {
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1)) calc(0.2rem * var(--density-scale, 1)) 0;
+  vertical-align: top;
+}
+.welcome-kbd-table td:first-child { white-space: nowrap; }
+.kbd {
+  display: inline-block;
+  padding: calc(0.05rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--text);
+  line-height: 1.3;
+}
+.welcome-footer {
+  margin: calc(1rem * var(--density-scale, 1)) 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  color: var(--muted);
+}
+#welcome-dialog menu {
+  margin: calc(0.75rem * var(--density-scale, 1)) 0 0 0;
+  padding: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: calc(0.4rem * var(--density-scale, 1));
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The sidebar row action buttons override padding/border, so the default
+   outline clips weirdly — use a box-shadow instead. */
+#snippets li .actions button:focus-visible,
+#chains li .actions button:focus-visible,
+#text-snippets li .actions button:focus-visible,
+#templates li .actions button:focus-visible,
+.sidebar-star:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--primary-btn-text, var(--text));
+}
+button.primary:hover { background: var(--accent); color: #000; }
+
+.io-row { display: flex; gap: calc(0.25rem * var(--density-scale, 1)); }
+.io-row button { flex: 1; }
+
+.legend { color: var(--muted); font-size: calc(0.75rem * var(--density-scale, 1)); line-height: 1.5; }
+
+#editor-area {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 0;
+  background: var(--bg);
+  position: relative;
+}
+#editor-area > #tabs { grid-row: 1; }
+#editor-area > #find-panel { grid-row: 2; }
+#editor-area > #editor-with-gutter { grid-row: 3; }
+#editor-area > #pipeline { grid-row: 4; }
+
+#editor-with-gutter {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+#line-numbers {
+  margin: 0;
+  padding: calc(1rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1)) calc(1rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, 'Courier New', monospace);
+  font-size: var(--editor-font-size, 13px);
+  line-height: 1.5;
+  color: var(--muted);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  text-align: right;
+  user-select: none;
+  overflow: hidden;
+  min-width: 2.5rem;
+}
+#editor-with-gutter > .hl-wrap {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+#editor-with-gutter > .hl-wrap > #editor {
+  height: 100%;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+/* Main editor's pre inherits `position: absolute; inset: 0` from the base
+   .hl-wrap > .hl-pre rule. The inset-0 sizing replaces the old explicit
+   `height: 100%`. */
+#editor-area.drop-target::after {
+  content: 'Drop file to open as a new tab';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(78, 201, 176, 0.08);
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  font-size: calc(1rem * var(--density-scale, 1));
+  pointer-events: none;
+  z-index: 10;
+}
+
+#tabs {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  min-height: 2rem;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  padding: var(--density-tab-pad-y, 0.25rem) var(--density-tab-pad-x-right, 0.4rem)
+    var(--density-tab-pad-y, 0.25rem) var(--density-tab-pad-x-left, 0.6rem);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  max-width: 200px;
+  user-select: none;
+  white-space: nowrap;
+}
+.tab:hover { background: var(--panel-2); color: var(--text); }
+.tab.active { background: var(--bg); color: var(--text); }
+/* `pointer-events: none` sends mousedown on the title text straight to the
+   parent .tab. Without this, Shift+mousedown on the span is treated as a
+   "extend text selection anchor" gesture by the browser, which suppresses
+   the parent's drag-source resolution and breaks Shift-drop merge when the
+   user happens to click the title itself. Tooltip (`title` attr) is on the
+   .tab parent, so it still fires on hover. */
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tab-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 calc(0.2rem * var(--density-scale, 1));
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.tab-close:hover { background: var(--btn-bg-hover); color: var(--text); }
+.tab:not(:hover):not(.active) .tab-close { opacity: 0; pointer-events: none; }
+
+/* Pin button — CSS-drawn filled dot to match the app's emoji-free chrome.
+   Hidden on unpinned tabs; shown on pinned. Click to unpin. */
+.tab-pin {
+  display: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 2px;
+}
+.tab-pin::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.tab.pinned .tab-pin { display: inline-flex; }
+.tab.pinned .tab-close { display: none; }
+.tab.pinned { padding-right: calc(0.6rem * var(--density-scale, 1)); }
+.tab-pin:hover { background: var(--btn-bg-hover); }
+.tab-pin:hover::before { background: var(--text); }
+
+/* Dirty indicator — shown when the tab's content has diverged from its
+   source text snippet (see editor.js > isTabDirty). Warm color distinct
+   from the cool --accent pin dot so the two stay visually separable on
+   a tab that's both pinned and dirty. Pure decoration: pointer-events
+   stay off so it never eats drag starts. */
+.tab-dirty-dot {
+  display: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: #d4a24a;
+  margin-right: calc(0.1rem * var(--density-scale, 1));
+  pointer-events: none;
+  flex: 0 0 auto;
+}
+.tab.dirty .tab-dirty-dot { display: inline-block; }
+
+/* Drag-and-drop: source dims while dragging. Drop targets show an
+   inset border marker on the side of the imminent insertion (reorder)
+   or a full highlight (Shift-held = merge). `inset` box-shadow is used
+   instead of an outline so the marker sits inside the tab's existing
+   border-right, keeping the strip's row height stable. */
+.tab.dragging { opacity: 0.4; }
+.tab.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+.tab.drop-after  { box-shadow: inset -3px 0 0 var(--accent); }
+.tab.drop-merge {
+  background: var(--accent-dim);
+  color: var(--text);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Tab switcher — same fixed-top layout as #runner (see the note above
+   `#runner`): avoids vertical jump as the list height changes. */
+#tab-switcher {
+  width: min(520px, 90vw);
+  padding: calc(0.75rem * var(--density-scale, 1));
+  top: 15vh;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+#tab-switcher-input {
+  width: 100%;
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.55rem * var(--density-scale, 1));
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  outline: none;
+  box-sizing: border-box;
+}
+#tab-switcher-input:focus { border-color: var(--accent); }
+#tab-switcher-list {
+  margin: calc(0.4rem * var(--density-scale, 1)) 0 0 0;
+  padding: calc(0.2rem * var(--density-scale, 1)) 0;
+  list-style: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.tab-switcher-item {
+  padding: calc(0.35rem * var(--density-scale, 1)) calc(0.6rem * var(--density-scale, 1));
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  cursor: pointer;
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: calc(0.5rem * var(--density-scale, 1));
+  row-gap: calc(0.1rem * var(--density-scale, 1));
+  line-height: 1.3;
+}
+.tab-switcher-item.highlighted { background: var(--accent-dim); }
+.tab-switcher-item-title { font-weight: 500; }
+.tab-switcher-item-pin {
+  grid-row: 1;
+  grid-column: 2;
+  font-size: calc(0.65rem * var(--density-scale, 1));
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  align-self: center;
+}
+.tab-switcher-item-snippet {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: calc(0.78rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-switcher-item-match { color: var(--accent); font-weight: 600; }
+.tab-switcher-empty {
+  padding: calc(0.5rem * var(--density-scale, 1)) calc(0.6rem * var(--density-scale, 1));
+  color: var(--muted);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+
+/* Workspaces button — sits in the tab strip alongside `+`. Small,
+   muted, reveals on hover to match `.tab-close` / `#new-tab-btn`. */
+#workspaces-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 calc(0.6rem * var(--density-scale, 1));
+  cursor: pointer;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  letter-spacing: 0.04em;
+}
+#workspaces-btn:hover { color: var(--text); background: var(--panel-2); }
+
+/* Workspaces dialog — list of saved tab sets with per-row actions.
+   Dialog inherits `.app-modal` width; the list and row layout are
+   local. */
+#workspaces-dialog { width: min(560px, 90vw); }
+.workspaces-hint {
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  font-size: calc(0.82rem * var(--density-scale, 1));
+}
+.workspaces-save-row {
+  margin: 0 0 calc(0.75rem * var(--density-scale, 1)) 0;
+  padding: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  border-bottom: 1px solid var(--border);
+}
+#workspaces-save-current {
+  width: 100%;
+  padding: calc(0.45rem * var(--density-scale, 1)) calc(0.6rem * var(--density-scale, 1));
+  background: var(--accent-dim);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+#workspaces-save-current:hover { background: var(--accent); color: var(--bg); }
+#workspaces-list {
+  list-style: none;
+  margin: 0 0 calc(0.75rem * var(--density-scale, 1)) 0;
+  padding: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.workspaces-item {
+  display: flex;
+  align-items: center;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel-2);
+  margin-bottom: calc(0.3rem * var(--density-scale, 1));
+}
+.workspaces-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.1rem * var(--density-scale, 1));
+}
+.workspaces-item-name {
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspaces-item-meta { font-size: calc(0.75rem * var(--density-scale, 1)); }
+.workspaces-item-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: calc(0.2rem * var(--density-scale, 1));
+}
+.workspaces-item-actions button {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.45rem * var(--density-scale, 1));
+  font-size: calc(0.78rem * var(--density-scale, 1));
+  cursor: pointer;
+  border-radius: 2px;
+  font: inherit;
+}
+.workspaces-item-actions button:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--bg);
+}
+.workspaces-empty {
+  padding: calc(0.6rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  color: var(--muted);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  text-align: center;
+}
+#new-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 calc(0.6rem * var(--density-scale, 1));
+  cursor: pointer;
+  font-size: calc(1rem * var(--density-scale, 1));
+}
+#new-tab-btn:hover { color: var(--text); background: var(--panel-2); }
+
+#find-panel {
+  display: flex;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: var(--density-find-pad-y, 0.35rem) var(--density-find-pad-x, 0.5rem);
+  font-size: calc(0.82rem * var(--density-scale, 1));
+  flex-wrap: wrap;
+}
+#find-panel.hidden { display: none; }
+#find-panel.find-only #replace-input,
+#find-panel.find-only #find-replace,
+#find-panel.find-only #find-replace-all { display: none; }
+#find-panel input[type=text] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.82rem * var(--density-scale, 1));
+  outline: none;
+  min-width: 14rem;
+}
+#find-panel input[type=text]:focus { border-color: var(--accent); }
+#find-panel .find-opt {
+  display: flex;
+  align-items: center;
+  gap: calc(0.1rem * var(--density-scale, 1));
+  padding: calc(0.1rem * var(--density-scale, 1)) calc(0.3rem * var(--density-scale, 1));
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+#find-panel .find-opt input { margin: 0; }
+#find-panel .find-opt:has(input:checked) {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--panel-2);
+}
+#find-count {
+  color: var(--muted);
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.78rem * var(--density-scale, 1));
+  min-width: 3.5rem;
+  text-align: right;
+}
+#find-count.no-match { color: var(--danger); }
+#find-panel button {
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.45rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+
+#editor {
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  resize: none;
+  padding: calc(1rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, 'Courier New', monospace);
+  font-size: var(--editor-font-size, 13px);
+  line-height: 1.5;
+  outline: none;
+  tab-size: var(--editor-tab-size, 4);
+}
+/* #editor always carries .hl-textarea — selection styling lives in the
+   .hl-textarea rules above. */
+
+#pipeline {
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  padding: var(--density-pipeline-pad-y, 0.5rem) var(--density-pipeline-pad-x, 0.75rem);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+#pipeline.collapsed { max-height: none; padding-bottom: calc(0.35rem * var(--density-scale, 1)); }
+#pipeline.collapsed #pipeline-steps,
+#pipeline.collapsed #pipeline-vars,
+#pipeline.collapsed #pipeline-outputs { display: none; }
+#pipeline.collapsed .pipeline-head button:not(.pipeline-collapse) { display: none; }
+#pipeline.collapsed .pipeline-collapse { transform: rotate(-90deg); }
+.pipeline-collapse {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 calc(0.3rem * var(--density-scale, 1));
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  transition: transform 0.12s;
+  cursor: pointer;
+}
+.pipeline-collapse:hover { color: var(--text); background: var(--btn-bg-hover); }
+.pipeline-head {
+  display: flex;
+  align-items: center;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  margin-bottom: calc(0.5rem * var(--density-scale, 1));
+}
+.pipeline-head .label {
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-right: auto;
+}
+#pipeline-steps {
+  list-style: none;
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  padding: 0;
+  display: flex;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  flex-wrap: wrap;
+}
+#pipeline-steps li {
+  display: flex;
+  align-items: center;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: var(--density-pipeline-step-pad-y, 0.2rem) var(--density-pipeline-step-pad-x, 0.4rem);
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+#pipeline-steps li.active { border-color: var(--accent); }
+#pipeline-steps li.errored { border-color: var(--danger); }
+#pipeline-steps li.dragging { opacity: 0.4; }
+#pipeline-steps li.drag-over { border-color: var(--accent); background: var(--btn-bg-hover); }
+#pipeline-steps li button {
+  padding: 0 calc(0.25rem * var(--density-scale, 1));
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  background: transparent;
+  border: none;
+  color: var(--muted);
+}
+#pipeline-steps li button:hover { color: var(--text); background: var(--btn-bg-hover); }
+
+#pipeline-outputs pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.5rem * var(--density-scale, 1));
+  font-family: monospace;
+  font-size: calc(12px * var(--density-scale, 1));
+  max-height: 200px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+}
+#pipeline-outputs .empty { color: var(--muted); font-size: calc(0.85rem * var(--density-scale, 1)); padding: calc(0.5rem * var(--density-scale, 1)) 0; }
+#pipeline-outputs .step-meta {
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  margin: 0 0 calc(0.25rem * var(--density-scale, 1)) 0;
+}
+#pipeline-outputs .step-meta .name { color: var(--text); font-family: monospace; }
+#pipeline-outputs .step-meta code { color: var(--muted); }
+
+/* Palette */
+#palette {
+  /* Horizontally centred via `inset-inline: 0; margin-inline: auto` rather
+     than `left: 50%; transform: translateX(-50%)`. A transform promotes the
+     palette to its own compositor layer at a fractional pixel origin
+     (`calc(50% - width/2)` is rarely integer), which Chrome then rasterizes
+     with sub-pixel offsets — every text descendant, including the overlay
+     <pre>, renders visibly blurred. Pure layout avoids that. Width resizes
+     still re-centre correctly because `margin: auto` splits the remaining
+     horizontal space between left and right. */
+  position: fixed;
+  top: 10%;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: 640px;
+  max-width: 92vw;
+  max-height: 80vh;
+  min-width: 440px;
+  min-height: 320px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  z-index: 100;
+  resize: both;
+  overflow: auto;
+}
+#palette.hidden { display: none; }
+.palette-inner {
+  padding: calc(0.75rem * var(--density-scale, 1));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: calc(0.75rem * var(--density-scale, 1));
+  min-height: 100%;
+}
+.palette-inner.with-ref { grid-template-columns: minmax(0, 1fr) auto; }
+.palette-main { display: flex; flex-direction: column; min-width: 0; }
+.palette-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(0.75rem * var(--density-scale, 1));
+  margin-bottom: calc(0.5rem * var(--density-scale, 1));
+  padding-bottom: calc(0.4rem * var(--density-scale, 1));
+  border-bottom: 1px solid var(--border);
+}
+.palette-title-name {
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  font-weight: 600;
+  color: var(--text);
+}
+.palette-title-kbd { font-size: calc(0.75rem * var(--density-scale, 1)); color: var(--muted); }
+#palette-reference { display: none; }
+.palette-inner.with-ref #palette-reference { display: block; }
+
+#palette-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: calc(0.5rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, monospace);
+  font-size: calc(14px * var(--density-scale, 1));
+  line-height: 1.5;
+  border-radius: 3px;
+  outline: none;
+  /* User can drag to grow past the autosize cap for long programs.
+     Autosize still runs on each input event, but it's skipped (see
+     autosizePaletteInput) once the user has manually set a height. */
+  resize: vertical;
+  overflow-y: auto;
+  max-height: 60vh;
+  min-height: 2rem;
+  display: block;
+}
+#palette-input:focus { border-color: var(--accent); }
+
+.palette-step-fields {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.35rem * var(--density-scale, 1));
+  margin-top: calc(0.35rem * var(--density-scale, 1));
+}
+#palette-step-name {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.35rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-family: inherit;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+#palette-step-name:focus { border-color: var(--accent); outline: none; }
+/* Variables carries `palette-section` too, so `summary.label` styling (uppercase
+   + letter-spacing, matching Snippets / Templates / History) comes from there. */
+.palette-vars[open] > summary.label { color: var(--text); }
+.palette-vars .params-list,
+.palette-vars .add-param-btn { margin-top: calc(0.3rem * var(--density-scale, 1)); }
+.palette-vars-actions,
+.snippet-params-actions {
+  margin-top: calc(0.3rem * var(--density-scale, 1));
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.3rem * var(--density-scale, 1));
+}
+.palette-vars-actions > .add-param-btn,
+.snippet-params-actions > .add-param-btn { margin-top: 0; }
+
+.palette-meta {
+  margin: calc(0.35rem * var(--density-scale, 1)) 0;
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  display: flex;
+  gap: calc(0.6rem * var(--density-scale, 1));
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* Thin vertical rule between each meta-row item — a separator that
+   disappears automatically when a sibling is `display:none` (e.g. the
+   pipeline-mode-only pieces), since the border travels with the element. */
+.palette-meta > *:not(:first-child) {
+  border-left: 1px solid var(--border);
+  padding-left: calc(0.6rem * var(--density-scale, 1));
+}
+.palette-pipeline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+}
+.palette-pipeline-toggle input { margin: 0; }
+.palette-pipeline-toggle:has(input:checked) { color: var(--text); }
+.palette-inner:not(.pipeline-mode-on) #palette-pop-last { display: none; }
+.palette-inner:not(.pipeline-mode-on) #palette-copy-io { display: none; }
+.palette-inner:not(.pipeline-mode-on) #palette-pipeline-count { display: none; }
+#palette-ref-toggle { margin-left: auto; }
+
+/* Save row sits just above the primary actions: name the step, then the
+   two "save-this-as" buttons, so the naming input lives next to its only
+   consumers. Step-name grows to fill available width; buttons stay
+   natural-size on the right. Mirrors palette-actions' row layout so the
+   two bottom rows feel visually paired. */
+.palette-save-row {
+  display: flex;
+  align-items: center;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  margin-top: calc(0.5rem * var(--density-scale, 1));
+}
+.palette-save-row #palette-step-name { flex: 1; }
+
+/* Simple-view hides every advanced control so the palette shrinks to just
+   program textarea + preview + Close/Apply (+ the Show/Hide advanced
+   toggle itself, which must remain clickable to get back out of simple
+   view). `.with-ref` and `.pipeline-mode-on` classes are orthogonal; they
+   continue to affect visibility of the reference aside and pipeline-only
+   pieces, but in simple view the reference aside is hidden regardless. */
+.palette-inner.simple-view .palette-step-fields,
+.palette-inner.simple-view .palette-meta,
+.palette-inner.simple-view .filter-field,
+.palette-inner.simple-view .palette-section,
+.palette-inner.simple-view .snippet-reference,
+.palette-inner.simple-view .palette-save-row,
+.palette-inner.simple-view #palette-pipe {
+  display: none;
+}
+.palette-advanced-toggle {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  padding: calc(0.25rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+}
+.palette-advanced-toggle:hover { color: var(--text); text-decoration: underline; }
+.palette-actions-spacer { flex: 1; }
+.muted { color: var(--muted); }
+
+#palette-library,
+#palette-history {
+  /* Match the chain dialog's snippet-picker: a bordered, scrollable box with
+     wrap-then-overflow chips, so both surfaces look and feel the same. */
+  list-style: none;
+  margin: calc(0.35rem * var(--density-scale, 1)) 0;
+  padding: calc(0.35rem * var(--density-scale, 1));
+  display: flex;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  flex-wrap: wrap;
+  align-content: flex-start;
+  max-height: 8rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+}
+#palette-library li,
+#palette-history li {
+  background: var(--btn-bg);
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.45rem * var(--density-scale, 1));
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--text);
+}
+#palette-library li:hover,
+#palette-history li:hover { background: var(--btn-bg-hover); }
+#palette-library li.empty,
+#palette-library li.empty:hover,
+#palette-history li.empty,
+#palette-history li.empty:hover {
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+  font-family: inherit;
+}
+/* Palette library chips reuse the snippet-editor picker's T / S letter
+   badge so the two surfaces look consistent. See `.template-chip-badge`. */
+#palette-library li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(0.35rem * var(--density-scale, 1));
+}
+#palette-library li .palette-kind-badge {
+  font-family: inherit;
+  font-size: calc(0.6rem * var(--density-scale, 1));
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: calc(0.95rem * var(--density-scale, 1));
+  text-align: center;
+  padding: 0 calc(0.15rem * var(--density-scale, 1));
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  flex: none;
+  color: var(--muted);
+}
+#palette-library li .palette-kind-badge-snippet { border-color: var(--accent-dim); }
+.palette-history-clear {
+  float: right;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  padding: 0 calc(0.35rem * var(--density-scale, 1));
+  text-transform: none;
+  letter-spacing: 0;
+}
+.palette-history-clear:hover { color: var(--danger); }
+#palette-search {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  border-radius: 3px;
+  outline: none;
+}
+.palette-inner > .filter-field { margin-top: calc(0.35rem * var(--density-scale, 1)); }
+#palette-search:focus { border-color: var(--accent); }
+.palette-section { margin: calc(0.35rem * var(--density-scale, 1)) 0; }
+.palette-section > summary.label {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: calc(0.25rem * var(--density-scale, 1));
+  user-select: none;
+}
+.palette-section > summary.label:hover { color: var(--text); }
+.palette-section ul { margin-top: 0; }
+/* When a <details> section is collapsed, drop the list's top margin so the
+   summary + hidden list don't leave a lingering gap. */
+.palette-section:not([open]) ul { margin: 0; }
+
+.palette-preview { margin: calc(0.5rem * var(--density-scale, 1)) 0; }
+.palette-scope {
+  display: block;
+  margin-top: calc(0.25rem * var(--density-scale, 1));
+  font-size: calc(0.75rem * var(--density-scale, 1));
+}
+.palette-preview .label {
+  color: var(--muted);
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: calc(0.25rem * var(--density-scale, 1));
+}
+#palette-output {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.5rem * var(--density-scale, 1));
+  font-family: monospace;
+  font-size: calc(12px * var(--density-scale, 1));
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  min-height: 3em;
+}
+#palette-output.error { color: var(--danger); }
+
+.palette-actions {
+  display: flex;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  justify-content: flex-end;
+  margin-top: calc(0.5rem * var(--density-scale, 1));
+}
+
+/* Dialogs */
+dialog {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: calc(1rem * var(--density-scale, 1));
+  max-width: 90vw;
+  max-height: 90vh;
+}
+dialog form { max-width: 100%; }
+
+/* In-app alert/confirm/prompt replacements. */
+.app-modal { width: 420px; max-width: 92vw; }
+.app-modal .app-confirm-message,
+.app-modal .app-prompt-message {
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  font-size: calc(0.9rem * var(--density-scale, 1));
+}
+.app-modal .app-prompt-input {
+  width: 100%;
+  min-width: 0;
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: calc(0.95rem * var(--density-scale, 1));
+}
+.app-modal .app-prompt-input:focus { border-color: var(--accent); outline: none; }
+.app-confirm-ok.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+}
+.app-confirm-ok.danger:hover { background: var(--danger); filter: brightness(1.15); }
+.danger-btn {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.danger-btn:hover {
+  background: var(--danger);
+  color: white;
+  filter: brightness(1.05);
+}
+
+/* Settings dialog "DANGER ZONE" block — visually quarantined from Save so a
+   misclick can't wipe the user's library. Red border + red legend signal
+   the consequences; per-row blurb explains scope. */
+.danger-zone {
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: calc(0.5rem * var(--density-scale, 1)) calc(0.75rem * var(--density-scale, 1)) calc(0.75rem * var(--density-scale, 1));
+  margin-top: calc(0.5rem * var(--density-scale, 1));
+}
+.danger-zone > legend {
+  color: var(--danger);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  padding: 0 calc(0.4rem * var(--density-scale, 1));
+}
+.danger-zone-row {
+  display: flex;
+  align-items: center;
+  gap: calc(0.75rem * var(--density-scale, 1));
+  padding: calc(0.4rem * var(--density-scale, 1)) 0;
+}
+.danger-zone-row + .danger-zone-row { border-top: 1px dashed var(--border); }
+.danger-zone-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.15rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+.danger-zone-text strong { color: var(--text); font-weight: 600; }
+.danger-zone-text .muted { font-size: calc(0.75rem * var(--density-scale, 1)); line-height: 1.35; }
+.danger-zone-row .danger-btn { flex: 0 0 auto; }
+dialog::backdrop { background: rgba(0,0,0,0.5); }
+dialog h3 { margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0; font-weight: 500; }
+dialog form { display: flex; flex-direction: column; gap: calc(0.6rem * var(--density-scale, 1)); }
+dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.2rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--muted);
+}
+dialog label-text, .label-text {
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--muted);
+}
+dialog input, dialog textarea {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: calc(0.4rem * var(--density-scale, 1));
+  border-radius: 3px;
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.9rem * var(--density-scale, 1));
+  outline: none;
+}
+#snippet-program {
+  resize: vertical;
+  min-height: 6em;
+  width: 100%;
+  min-width: 0;
+}
+#snippet-description {
+  resize: vertical;
+  min-height: 2em;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ---------- tag chip-input widget ---------- */
+.tag-chip-input {
+  position: relative;
+  display: block;
+}
+.tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.25rem * var(--density-scale, 1));
+  min-height: 1.8em;
+  cursor: text;
+}
+.tag-chip-list:focus-within { border-color: var(--accent); }
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0.15rem * var(--density-scale, 1));
+  background: var(--accent-dim);
+  color: var(--text);
+  border-radius: 10px;
+  padding: calc(0.05rem * var(--density-scale, 1)) calc(0.2rem * var(--density-scale, 1)) calc(0.05rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.78rem * var(--density-scale, 1));
+  line-height: 1.4;
+  font-family: inherit;
+}
+.tag-chip-label { user-select: none; }
+.tag-chip-remove {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 calc(0.25rem * var(--density-scale, 1));
+  margin: 0;
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  visibility: hidden;
+}
+.tag-chip:hover .tag-chip-remove,
+.tag-chip:focus-within .tag-chip-remove { visibility: visible; }
+.tag-chip-remove:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.tag-chip-input-field {
+  flex: 1;
+  min-width: 8ch;
+  background: transparent !important;
+  border: none !important;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.2rem * var(--density-scale, 1)) !important;
+  font-family: inherit !important;
+  font-size: calc(0.85rem * var(--density-scale, 1)) !important;
+  color: var(--text);
+  outline: none;
+}
+.tag-chip-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: calc(0.15rem * var(--density-scale, 1)) 0 0 0;
+  padding: calc(0.15rem * var(--density-scale, 1)) 0;
+  list-style: none;
+  background: var(--panel-2, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+.tag-chip-dropdown-item {
+  padding: calc(0.25rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.82rem * var(--density-scale, 1));
+  cursor: pointer;
+  color: var(--text);
+}
+.tag-chip-dropdown-item.highlighted { background: var(--accent-dim); }
+.tag-chip-dropdown-prefix { margin-right: calc(0.2rem * var(--density-scale, 1)); }
+.tag-chip-dropdown-new { color: var(--text); }
+
+/* Runner (Ctrl+O). Typeahead dialog with a single input and a listbox
+   of snippet / chain names; a slimmer sibling of the Ctrl+K palette.
+   Filter chips at the top scope the list; each row carries a tiny SN
+   or CH tag so the two kinds stay visually distinct. */
+#runner {
+  width: min(560px, 90vw);
+  padding: calc(1rem * var(--density-scale, 1));
+  /* Pin the dialog to a fixed top offset — the default UA modal-dialog
+     centring (`margin: auto` + auto insets) re-computes every time the
+     dropdown's height changes as the user types, which reads as the
+     dialog "jumping" around. A fixed top + horizontal-only centring
+     keeps the header row stable; only the dropdown below it moves. */
+  top: 15vh;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+}
+.runner-header {
+  display: flex;
+  align-items: center;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+}
+.runner-header h3 { flex: 1; margin: 0; }
+/* Pin: session-scoped "keep open after run" toggle. Muted until
+   engaged; when pinned, tints the background with the accent so the
+   dialog's mode is hard to miss. */
+.runner-pin {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+  filter: grayscale(1);
+  transition: opacity 0.1s ease, filter 0.1s ease, border-color 0.1s ease;
+}
+.runner-pin:hover {
+  opacity: 0.85;
+  border-color: var(--border);
+}
+.runner-pin.pinned {
+  opacity: 1;
+  filter: none;
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.runner-hint {
+  margin: 0 0 calc(0.6rem * var(--density-scale, 1)) 0;
+  font-size: calc(0.82rem * var(--density-scale, 1));
+  /* The hint is multi-line — `\n` in textContent (and literal line
+     breaks in the HTML) should render as line breaks without needing
+     <br> markup, so `white-space: pre-line`. Leading whitespace still
+     collapses, keeping the HTML indentation tidy. */
+  white-space: pre-line;
+}
+.runner-chips {
+  display: flex;
+  align-items: center;
+  gap: calc(0.35rem * var(--density-scale, 1));
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+}
+.runner-chips-label {
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  margin-right: calc(0.2rem * var(--density-scale, 1));
+}
+.runner-chip {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.55rem * var(--density-scale, 1));
+  font-size: calc(0.78rem * var(--density-scale, 1));
+  cursor: pointer;
+  line-height: 1.3;
+}
+.runner-chip:hover { color: var(--text); border-color: var(--accent); }
+.runner-chip.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.runner-combo { position: relative; }
+#runner-input {
+  width: 100%;
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.55rem * var(--density-scale, 1));
+  font-size: calc(0.95rem * var(--density-scale, 1));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  outline: none;
+  box-sizing: border-box;
+}
+#runner-input:focus { border-color: var(--accent); }
+#runner-dropdown {
+  margin: calc(0.25rem * var(--density-scale, 1)) 0 0 0;
+  padding: calc(0.2rem * var(--density-scale, 1)) 0;
+  list-style: none;
+  background: var(--panel-2, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.runner-item {
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.6rem * var(--density-scale, 1));
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: calc(0.6rem * var(--density-scale, 1));
+}
+.runner-item.highlighted { background: var(--accent-dim); }
+.runner-tag {
+  flex: 0 0 auto;
+  font-size: calc(0.65rem * var(--density-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: calc(0.05rem * var(--density-scale, 1)) calc(0.35rem * var(--density-scale, 1));
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--bg);
+  text-transform: uppercase;
+}
+/* Dark-green palette — deliberately subdued so the SN / CH tags don't
+   pull the eye away from the name column. Slight hue shift between the
+   two keeps them distinguishable without being loud. */
+.runner-tag-snippet { color: #4a7a4a; border-color: #4a7a4a; }
+.runner-tag-chain   { color: #2f5a3a; border-color: #2f5a3a; }
+.runner-name { flex: 0 0 auto; }
+.runner-desc {
+  flex: 1 1 auto;
+  font-size: calc(0.78rem * var(--density-scale, 1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.runner-empty {
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.6rem * var(--density-scale, 1));
+  font-size: calc(0.82rem * var(--density-scale, 1));
+  font-style: italic;
+}
+
+#snippet-dialog {
+  resize: both;
+  overflow: auto;
+  width: 760px;
+  min-width: 480px;
+  min-height: 360px;
+}
+
+/* Callout shown when the snippet dialog is opened from a chain step, so the
+   user knows they're looking at a global snippet (changes affect every
+   other chain/pipeline step that references it) and can explicitly fork. */
+.fork-banner {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn, #d4a24c);
+  background: var(--bg);
+  color: var(--muted);
+  padding: calc(0.5rem * var(--density-scale, 1)) calc(0.7rem * var(--density-scale, 1));
+  border-radius: 3px;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  line-height: 1.4;
+}
+.fork-banner strong { color: var(--text); }
+.fork-banner.forked { border-left-color: var(--accent); }
+
+#chain-dialog {
+  resize: both;
+  overflow: auto;
+  width: 560px;
+  min-width: 400px;
+  min-height: 320px;
+}
+
+#template-dialog {
+  resize: both;
+  overflow: auto;
+  width: 640px;
+  min-width: 400px;
+  min-height: 360px;
+}
+
+#inline-step-dialog {
+  resize: both;
+  overflow: auto;
+  width: 720px;
+  min-width: 480px;
+  min-height: 320px;
+}
+#template-body {
+  resize: vertical;
+  min-height: 8em;
+  width: 100%;
+  min-width: 0;
+}
+#inline-step-program {
+  /* Match `#snippet-program` / `#template-body`: the textarea fills its
+     grid column (hugging the dialog's right edge when the reference
+     aside is hidden, or the aside's left edge when it's shown) and the
+     user can only resize vertically. Without `resize: vertical`, the
+     default `both` lets a horizontal drag set an inline `width` that
+     overrides the cascaded `.hl-textarea { width: 100% }` from the
+     highlighter, leaving the textarea narrower than its column. */
+  resize: vertical;
+  min-height: 6em;
+  width: 100%;
+  min-width: 0;
+}
+#template-description {
+  resize: vertical;
+  min-height: 2em;
+  width: 100%;
+  min-width: 0;
+}
+
+#settings-dialog {
+  width: 620px;
+  max-height: 90vh;
+  min-width: 420px;
+  min-height: 300px;
+  overflow: auto;
+  resize: both;
+}
+.settings-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: calc(0.5rem * var(--density-scale, 1)) calc(0.75rem * var(--density-scale, 1));
+  margin: calc(0.35rem * var(--density-scale, 1)) 0;
+}
+.settings-form legend {
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0 calc(0.3rem * var(--density-scale, 1));
+}
+.settings-form label {
+  display: flex;
+  flex-direction: row;
+  gap: calc(0.6rem * var(--density-scale, 1));
+  align-items: center;
+  margin: calc(0.35rem * var(--density-scale, 1)) 0;
+  color: var(--text);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+.settings-form label > span {
+  flex: 0 0 auto;
+  min-width: 11rem;
+  color: var(--text);
+}
+.settings-form label:has(> input[type=checkbox]) > span {
+  min-width: 0;
+  flex: 1;
+}
+.settings-form label > input[type=checkbox] { flex: 0 0 auto; margin: 0; }
+.settings-form label > input:not([type=checkbox]),
+.settings-form label > select,
+.settings-form label > textarea {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  outline: none;
+}
+.settings-form label code {
+  background: var(--panel-2);
+  padding: 0 calc(0.2rem * var(--density-scale, 1));
+  border-radius: 2px;
+  font-size: calc(0.95em * var(--density-scale, 1));
+}
+.settings-form textarea { resize: vertical; min-height: 2em; }
+/* Stacked label: descriptive text on its own row, multi-line input below.
+   Default `.settings-form label` is a flex row with a fixed-ish label span
+   and flex:1 input — fine for short labels but the textarea gets squeezed
+   to zero width when the description runs long (see Safety → Forbidden
+   patterns). The stack variant switches that single row to a column. */
+/* Filter bar at the top of the Settings dialog — live substring search
+   over labels, tooltips, and fieldset legends. Sticky so the input
+   stays reachable while the user scrolls a long dialog. */
+.settings-search-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel, var(--bg));
+  padding: calc(0.35rem * var(--density-scale, 1)) 0;
+  margin-bottom: calc(0.4rem * var(--density-scale, 1));
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.25rem * var(--density-scale, 1));
+}
+.settings-search-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.35rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.9rem * var(--density-scale, 1));
+  width: 100%;
+  box-sizing: border-box;
+}
+.settings-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.settings-search-empty {
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  font-style: italic;
+}
+
+/* Small dotted-underline hint on labels that carry a `title=` tooltip,
+   so users know there's more to hover for. Applied only inside the
+   settings form to avoid styling unrelated tooltips. */
+.settings-form label[title] > span:first-child {
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+.settings-form label.settings-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: calc(0.3rem * var(--density-scale, 1));
+}
+.settings-form label.settings-stack > span {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+/* Live "Test a command" result block under Safety → Forbidden patterns.
+   Red-tinted for "Prevented", green-tinted for "Allowed". Border-left
+   stripe echoes the toast style used elsewhere for status messages. */
+.safety-test-result {
+  margin-top: calc(0.3rem * var(--density-scale, 1));
+  padding: calc(0.5rem * var(--density-scale, 1)) calc(0.75rem * var(--density-scale, 1));
+  border-left: 3px solid var(--muted);
+  background: rgba(128, 128, 128, 0.08);
+  border-radius: 3px;
+  font-size: calc(0.9em * var(--density-scale, 1));
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.25rem * var(--density-scale, 1));
+}
+.safety-test-result.safety-test-prevented {
+  border-left-color: var(--danger);
+  background: rgba(244, 135, 113, 0.08);
+}
+.safety-test-result.safety-test-prevented strong { color: var(--danger); }
+.safety-test-result.safety-test-allowed {
+  border-left-color: var(--accent);
+  background: rgba(78, 201, 176, 0.08);
+}
+.safety-test-result.safety-test-allowed strong { color: var(--accent); }
+.safety-test-detail { color: var(--muted); }
+.safety-test-detail code {
+  color: var(--text);
+  background: rgba(128, 128, 128, 0.15);
+  padding: 0 calc(0.25em * var(--density-scale, 1));
+  border-radius: 2px;
+}
+.safety-test-pattern {
+  display: block;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  word-break: break-all;
+  color: var(--muted);
+  font-size: calc(0.85em * var(--density-scale, 1));
+}
+.settings-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.5rem * var(--density-scale, 1)) calc(1rem * var(--density-scale, 1));
+  padding: calc(0.2rem * var(--density-scale, 1)) 0;
+}
+.settings-inline label { margin: 0; }
+
+.snippet-editor-row {
+  display: grid;
+  grid-template-columns: minmax(40ch, 1fr) auto;
+  gap: calc(0.75rem * var(--density-scale, 1));
+  align-items: start;
+}
+.snippet-editor-row.ref-hidden { grid-template-columns: 1fr; }
+.snippet-editor-row.ref-hidden .snippet-reference { display: none; }
+.snippet-editor-col { display: flex; flex-direction: column; gap: calc(0.3rem * var(--density-scale, 1)); min-width: 0; }
+.templates-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--muted);
+}
+.templates-row .ref-toggle-btn { margin-left: auto; }
+.ref-toggle-btn { font-size: calc(0.8rem * var(--density-scale, 1)); }
+
+/* Collapsible "Insert template" section — closed by default so it doesn't
+   take vertical space in the dialog until the user opts in. */
+.templates-section { margin-top: calc(0.25rem * var(--density-scale, 1)); }
+.templates-section > summary.templates-section-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0;
+  user-select: none;
+}
+.templates-section > summary.templates-section-summary:hover { color: var(--text); }
+.templates-filter {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: calc(0.25rem * var(--density-scale, 1));
+  padding: calc(0.25rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+.templates-filter:focus { border-color: var(--accent); outline: none; }
+.templates-filter:placeholder-shown { font-style: italic; }
+
+/* Template chip list — same visual as the palette's #palette-library,
+   and clicks insert the body at the caret. Hovering or keyboard-focusing
+   a chip writes the template body into the sibling .template-preview
+   pane so the user can see what they're about to insert. */
+.template-chip-list {
+  list-style: none;
+  margin: calc(0.25rem * var(--density-scale, 1)) 0 0 0;
+  padding: calc(0.35rem * var(--density-scale, 1));
+  display: flex;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  flex-wrap: wrap;
+  align-content: flex-start;
+  max-height: 6rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+}
+.template-chip-list li {
+  background: var(--btn-bg);
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.45rem * var(--density-scale, 1));
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--text);
+  outline: none;
+}
+.template-chip-list li:hover,
+.template-chip-list li:focus-visible { background: var(--btn-bg-hover); }
+.template-chip-list li.previewing { box-shadow: inset 0 0 0 1px var(--accent); }
+.templates-scope {
+  display: flex;
+  align-items: center;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  margin: calc(0.2rem * var(--density-scale, 1)) 0 calc(0.35rem * var(--density-scale, 1));
+  flex-wrap: wrap;
+}
+.templates-scope-label { font-size: calc(0.7rem * var(--density-scale, 1)); }
+.template-chip-list li.template-chip-empty {
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+  font-family: inherit;
+}
+.template-chip-list li.template-chip-empty:hover { background: transparent; }
+/* Every chip carries a single-letter kind badge (T for template, S for
+   snippet) so users can tell the two libraries apart at a glance when
+   the list is interleaved alphabetically. Chip stays clickable +
+   previewable regardless of kind. */
+.template-chip-list li.template-chip-template,
+.template-chip-list li.template-chip-snippet {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(0.35rem * var(--density-scale, 1));
+}
+.template-chip-list li .template-chip-badge {
+  font-family: inherit;
+  font-size: calc(0.6rem * var(--density-scale, 1));
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: calc(0.95rem * var(--density-scale, 1));
+  text-align: center;
+  padding: 0 calc(0.15rem * var(--density-scale, 1));
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  flex: none;
+}
+.template-chip-list li .template-chip-badge-snippet {
+  /* Subtle accent tint so the S stands out from the T, without shouting. */
+  border-color: var(--accent-dim);
+}
+
+.template-preview { margin: calc(0.25rem * var(--density-scale, 1)) 0 0 0; }
+.template-preview > summary {
+  cursor: pointer;
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0;
+}
+.template-preview > summary:hover { color: var(--text); }
+.template-preview-name {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  margin-left: calc(0.4rem * var(--density-scale, 1));
+}
+/* Collapsible "Keyboard shortcut" section in the snippet dialog. Matches
+   the templates-section look (muted summary, opens on click). */
+.shortcut-section { margin-top: calc(0.5rem * var(--density-scale, 1)); }
+.shortcut-section > summary.shortcut-section-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0;
+  user-select: none;
+}
+.shortcut-section > summary.shortcut-section-summary:hover { color: var(--text); }
+.shortcut-summary-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  margin-left: calc(0.4rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+}
+.shortcut-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.35rem * var(--density-scale, 1));
+  margin-top: calc(0.35rem * var(--density-scale, 1));
+}
+.shortcut-hint-text { font-size: calc(0.8rem * var(--density-scale, 1)); }
+.shortcut-capture-row {
+  display: flex;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  align-items: center;
+}
+.shortcut-capture-input {
+  flex: 1;
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+.shortcut-capture-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.shortcut-capture-input:placeholder-shown { font-family: inherit; font-style: italic; }
+.shortcut-warning {
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.6rem * var(--density-scale, 1));
+  border: 1px solid var(--warn, #c58a00);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--warn, #c58a00) 12%, transparent);
+  color: var(--text);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+.shortcut-warning.hard-block {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.shortcut-warning.hard-block strong { color: var(--danger); }
+.shortcut-warning ul { margin: calc(0.25rem * var(--density-scale, 1)) 0 0 calc(1.1rem * var(--density-scale, 1)); padding: 0; }
+.shortcut-warning li { margin: calc(0.1rem * var(--density-scale, 1)) 0; }
+
+/* Sidebar shortcut label — shows "[Ctrl+B]" after the snippet/chain name.
+   Doesn't shrink or wrap; the name truncates instead. */
+.shortcut-label {
+  flex: 0 0 auto;
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  white-space: nowrap;
+}
+
+/* Snippet sidebar test-status dot. Sits between the name and the row's
+   action chips; hidden when the snippet has no tests. */
+.test-status {
+  flex: 0 0 auto;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  line-height: 1;
+  width: 1rem;
+  text-align: center;
+  user-select: none;
+}
+.test-status.status-pass { color: #4ec9b0; }
+.test-status.status-fail { color: #f48771; }
+.test-status.status-unknown { color: var(--muted); }
+
+/* Snippet dialog → Test cases section. Each test is a row with a status
+   dot, name, trim toggle, run/delete buttons, and side-by-side Input /
+   Expected textareas. Failed tests append a unified diff below. */
+.tests-section { margin-top: calc(0.25rem * var(--density-scale, 1)); }
+.tests-section > summary.tests-section-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0;
+  user-select: none;
+}
+.tests-section > summary.tests-section-summary:hover { color: var(--text); }
+.tests-summary-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  margin-left: calc(0.4rem * var(--density-scale, 1));
+}
+.tests-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  margin-top: calc(0.4rem * var(--density-scale, 1));
+}
+.tests-empty { font-size: calc(0.85rem * var(--density-scale, 1)); }
+.tests-list { display: flex; flex-direction: column; gap: calc(0.5rem * var(--density-scale, 1)); }
+.tests-actions { display: flex; gap: calc(0.4rem * var(--density-scale, 1)); }
+.test-row {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: calc(0.4rem * var(--density-scale, 1));
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.35rem * var(--density-scale, 1));
+  background: var(--panel);
+}
+.test-row.pass { border-color: var(--accent-dim); }
+.test-row.fail { border-color: #cc6960; }
+.test-row-head {
+  display: flex;
+  align-items: center;
+  gap: calc(0.35rem * var(--density-scale, 1));
+}
+.test-dot { width: 1rem; text-align: center; }
+.test-row.pass .test-dot { color: #4ec9b0; }
+.test-row.fail .test-dot { color: #f48771; }
+.test-name {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+.test-trim-label {
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0.2rem * var(--density-scale, 1));
+  user-select: none;
+}
+.test-run, .test-dup, .test-del {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: calc(0.1rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.test-run:hover, .test-dup:hover, .test-del:hover { background: var(--btn-bg-hover); }
+
+/* Safety "Saved command checks" rows — reuse .test-row skeleton but swap
+   the body for a single-line (command, expect, delete) layout. */
+.safety-tests-hint {
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  margin-bottom: calc(0.4rem * var(--density-scale, 1));
+}
+.safety-test-text {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+.safety-test-expect-label { font-size: calc(0.75rem * var(--density-scale, 1)); }
+.safety-test-expect {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.3rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+.safety-test-feedback {
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--muted);
+  padding-left: calc(1.35rem * var(--density-scale, 1));
+}
+.safety-test-feedback code {
+  color: var(--text);
+  background: rgba(128, 128, 128, 0.15);
+  padding: 0 calc(0.25em * var(--density-scale, 1));
+  border-radius: 2px;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+}
+/* Presets editor (Settings → Presets). Each kind (FPAT, Timestamp) sits
+   in its own collapsible <details class="presets-group">; the summary
+   shows a live "· N presets, K modified" badge. Row layout per preset:
+   name (left) and value (right) side-by-side on row 1 with action
+   buttons trailing; description textarea full-width on row 2. */
+.presets-group {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  margin-bottom: calc(0.5rem * var(--density-scale, 1));
+  padding: 0;
+}
+.presets-group > summary {
+  padding: calc(0.35rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  cursor: pointer;
+  font-weight: 500;
+  list-style: none;
+  user-select: none;
+}
+.presets-group > summary::-webkit-details-marker { display: none; }
+.presets-group > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1em;
+  color: var(--muted);
+  transition: transform 0.1s ease;
+}
+.presets-group[open] > summary::before {
+  content: '▾';
+}
+.presets-group-count {
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  margin-left: calc(0.3rem * var(--density-scale, 1));
+}
+.presets-editor {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  border-top: 1px solid var(--border);
+}
+.presets-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.5rem * var(--density-scale, 1));
+}
+.presets-actions {
+  display: flex;
+  gap: calc(0.4rem * var(--density-scale, 1));
+}
+.preset-row {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: calc(0.4rem * var(--density-scale, 1));
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  grid-template-rows: auto auto;
+  gap: calc(0.35rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  background: var(--bg);
+  transition: border-color 0.1s ease, background-color 0.1s ease;
+}
+.preset-row.dragging { opacity: 0.4; }
+.preset-row.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+}
+.preset-drag {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 calc(0.3rem * var(--density-scale, 1));
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+  font-size: calc(0.9rem * var(--density-scale, 1));
+  line-height: 1;
+  letter-spacing: -0.15em;
+}
+.preset-drag:hover { color: var(--text); }
+.preset-drag:active { cursor: grabbing; }
+.preset-label {
+  grid-column: 2;
+  grid-row: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  min-width: 0;
+}
+.preset-value {
+  grid-column: 3;
+  grid-row: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  min-width: 0;
+}
+.preset-description {
+  grid-column: 2 / span 3;
+  grid-row: 2;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.2rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  resize: vertical;
+  min-height: 2.2rem;
+}
+.preset-actions {
+  grid-column: 4;
+  grid-row: 1;
+  display: flex;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  align-items: center;
+}
+.preset-reset {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: calc(0.1rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.preset-reset:hover { background: var(--btn-bg-hover); }
+
+/* Script-export settings: short instructional blurb at the top of the
+   fieldset, then a labelled row for each field. The template textarea
+   gets a header row with a right-aligned Reset button (shown only when
+   the live value differs from the shipped default) and a tokens hint
+   below. */
+.fieldset-hint {
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0;
+  line-height: 1.4;
+}
+.script-template-row {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  margin-top: calc(0.35rem * var(--density-scale, 1));
+}
+.script-template-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(0.5rem * var(--density-scale, 1));
+}
+.script-template-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.4rem * var(--density-scale, 1));
+  resize: vertical;
+}
+.script-template-textarea:focus { outline: none; border-color: var(--accent); }
+.script-template-tokens {
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  line-height: 1.5;
+  margin: 0;
+}
+.script-template-tokens code {
+  font-size: calc(0.72rem * var(--density-scale, 1));
+  padding: 0 calc(0.2rem * var(--density-scale, 1));
+}
+.preset-del {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: calc(0.1rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.preset-del:hover { background: var(--btn-bg-hover); }
+
+.test-row-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(0.4rem * var(--density-scale, 1));
+}
+.test-col {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.2rem * var(--density-scale, 1));
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  color: var(--muted);
+}
+.test-col textarea {
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.3rem * var(--density-scale, 1));
+  resize: vertical;
+}
+/* Per-test variable overrides. Default-collapsed; opens automatically when
+   the test already has overrides. Snippet params are pre-listed with their
+   default surfaced as placeholder text; ad-hoc rows use an editable name. */
+.test-vars-section { margin-top: calc(0.1rem * var(--density-scale, 1)); }
+.test-vars-section > summary.test-vars-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  user-select: none;
+  padding: calc(0.05rem * var(--density-scale, 1)) 0;
+}
+.test-vars-section > summary.test-vars-summary:hover { color: var(--text); }
+.test-vars-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  margin-left: calc(0.3rem * var(--density-scale, 1));
+}
+.test-vars-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.2rem * var(--density-scale, 1));
+  margin: calc(0.25rem * var(--density-scale, 1)) 0 calc(0.25rem * var(--density-scale, 1)) 0;
+}
+.test-var-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 10rem) 1fr auto;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  align-items: center;
+}
+/* Declared-param rows have no standalone × column — the clear affordance
+   lives inside the value field. Hide the grid's auto column so the input
+   stretches to fill. Ad-hoc rows still use three columns for the del btn. */
+.test-var-row:not(.adhoc) { grid-template-columns: minmax(6rem, 10rem) 1fr; }
+
+/* Inline clear button inside the value field — mirrors the sidebar filter ×. */
+.test-var-field {
+  position: relative;
+  display: block;
+}
+.test-var-field > .test-var-value { padding-right: calc(1.5rem * var(--density-scale, 1)); box-sizing: border-box; width: 100%; }
+.test-var-inline-clear {
+  position: absolute;
+  right: 0.15rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  line-height: 1;
+  padding: 0 calc(0.2rem * var(--density-scale, 1));
+  border-radius: 3px;
+}
+.test-var-inline-clear:hover { color: var(--text); background: var(--btn-bg-hover); }
+.test-var-field > input:placeholder-shown ~ .test-var-inline-clear { display: none; }
+.test-var-name {
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.test-var-name-input, .test-var-value {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+.test-var-name-input:focus, .test-var-value:focus { border-color: var(--accent); outline: none; }
+.test-var-del {
+  background: var(--btn-bg);
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: calc(0.05rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.test-var-del:hover { background: var(--btn-bg-hover); color: var(--text); }
+.test-vars-add {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: calc(0.1rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.test-vars-add:hover { background: var(--btn-bg-hover); }
+
+.test-feedback { display: flex; flex-direction: column; gap: calc(0.3rem * var(--density-scale, 1)); }
+.test-promote-row { display: flex; justify-content: flex-end; }
+.test-promote {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.test-promote:hover { background: var(--btn-bg-hover); }
+.test-stderr {
+  margin: 0;
+  padding: calc(0.4rem * var(--density-scale, 1));
+  background: color-mix(in srgb, #cc6960 12%, transparent);
+  border: 1px solid #cc6960;
+  border-radius: 3px;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.test-diff {
+  margin: 0;
+  padding: calc(0.4rem * var(--density-scale, 1));
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  white-space: pre;
+  overflow-x: auto;
+}
+.test-diff .diff-add { color: #4ec9b0; background: color-mix(in srgb, #4ec9b0 12%, transparent); display: block; }
+.test-diff .diff-del { color: #f48771; background: color-mix(in srgb, #f48771 12%, transparent); display: block; }
+.test-diff .diff-ctx { color: var(--muted); display: block; }
+.test-diff .diff-invisible { color: var(--muted); opacity: 0.55; }
+.test-diff .diff-eol { margin-left: calc(0.1rem * var(--density-scale, 1)); }
+
+/* Settings → Snippet keyboard shortcuts list. Grid so names and captured
+   combos line up across rows; the warning spans the full width below. */
+.shortcuts-settings-list { display: flex; flex-direction: column; gap: calc(0.35rem * var(--density-scale, 1)); }
+.shortcuts-settings-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 14rem) auto;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  align-items: center;
+}
+.shortcuts-settings-name {
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+/* Link-styled button — used for the clickable snippet name in settings so
+   it's discoverable as "jumps to edit" without looking like a form button. */
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.linklike:hover { text-decoration: none; color: var(--text); }
+.linklike:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.shortcuts-settings-input { min-width: 0; }
+.shortcuts-settings-warn { grid-column: 1 / -1; margin: 0; }
+
+/* Dual-field row: snippet name spans the full first row, then two cells
+   below with small "Run / Insert" labels. Grid keeps the two inputs the
+   same width even when their values differ in length. */
+.shortcuts-settings-row-dual {
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    'name name'
+    'runLabel insertLabel'
+    'runCell insertCell'
+    'runWarn insertWarn';
+  row-gap: calc(0.25rem * var(--density-scale, 1));
+}
+.shortcuts-settings-row-dual > .shortcuts-settings-name { grid-area: name; margin-bottom: calc(0.1rem * var(--density-scale, 1)); }
+.shortcuts-settings-row-dual > .shortcuts-settings-cell-label:nth-of-type(1) { grid-area: runLabel; }
+.shortcuts-settings-row-dual > .shortcuts-settings-cell-label:nth-of-type(2) { grid-area: insertLabel; }
+.shortcuts-settings-row-dual > .shortcuts-settings-cell:nth-of-type(1) { grid-area: runCell; }
+.shortcuts-settings-row-dual > .shortcuts-settings-cell:nth-of-type(2) { grid-area: insertCell; }
+.shortcuts-settings-row-dual > .shortcuts-settings-warn:nth-of-type(1) { grid-area: runWarn; grid-column: auto; }
+.shortcuts-settings-row-dual > .shortcuts-settings-warn:nth-of-type(2) { grid-area: insertWarn; grid-column: auto; }
+.shortcuts-settings-cell { display: flex; gap: calc(0.3rem * var(--density-scale, 1)); align-items: center; }
+.shortcuts-settings-cell > .shortcut-capture-input { flex: 1 1 auto; min-width: 0; }
+.shortcuts-settings-cell-label { font-size: calc(0.78rem * var(--density-scale, 1)); }
+.shortcuts-system-hint {
+  font-size: calc(0.72rem * var(--density-scale, 1));
+  margin-top: calc(0.1rem * var(--density-scale, 1));
+  white-space: normal;
+  line-height: 1.3;
+}
+/* Derived system-shortcut row: the combo is controlled by a parent action
+   (e.g. togglePaletteAdvanced inherits from openPalette), so the capture
+   input is disabled and the whole row is muted to telegraph "not
+   independently editable". */
+.shortcuts-settings-row-derived { opacity: 0.75; }
+.shortcut-derived {
+  background: transparent !important;
+  color: var(--muted) !important;
+  cursor: not-allowed;
+}
+
+/* Snippet edit dialog's second capture row label. */
+.shortcut-row-label {
+  font-size: calc(0.82rem * var(--density-scale, 1));
+  margin: calc(0.4rem * var(--density-scale, 1)) 0 calc(0.2rem * var(--density-scale, 1)) 0;
+  color: var(--text);
+}
+
+.template-preview-body {
+  margin: calc(0.3rem * var(--density-scale, 1)) 0 0 0;
+  padding: calc(0.5rem * var(--density-scale, 1));
+  /* Fixed height (not max-height): the preview slot reserves the same
+     vertical space whether it's empty, showing a 3-line template, or
+     showing a 30-line template. Without this the pane grew/shrank as the
+     user hovered between templates, resizing the dialog and shifting the
+     chips out from under the mouse — an endless jitter. `overflow: auto`
+     handles tall templates inside the fixed slot. */
+  height: 10rem;
+  overflow: auto;
+  /* Transparent so the panel color behind (the dialog's `--panel`) shows
+     through — matches the visually-apparent background of the program
+     textarea above, which is also effectively the panel color because
+     `.hl-textarea` is `background: transparent`. */
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--text);
+  white-space: pre;
+}
+.template-preview-body:empty::before {
+  content: 'Hover or focus a template above to preview its body.';
+  color: var(--muted);
+  font-family: inherit;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+.snippet-reference {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  width: 280px;
+  min-width: 180px;
+  min-height: 6em;
+  max-height: 40rem;
+  resize: both;
+  overflow: auto;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  line-height: 1.45;
+}
+.snippet-reference details { border-bottom: 1px solid var(--border); padding: calc(0.15rem * var(--density-scale, 1)) 0; }
+.snippet-reference details:last-of-type { border-bottom: none; }
+.snippet-reference summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.15rem * var(--density-scale, 1)) 0;
+  user-select: none;
+}
+.snippet-reference details[open] summary { color: var(--text); }
+.snippet-reference ul {
+  list-style: none;
+  padding: calc(0.15rem * var(--density-scale, 1)) 0 calc(0.35rem * var(--density-scale, 1)) calc(0.25rem * var(--density-scale, 1));
+  margin: 0;
+}
+.snippet-reference li { margin: calc(0.2rem * var(--density-scale, 1)) 0; }
+.snippet-reference code {
+  background: var(--panel-2);
+  padding: 0 calc(0.15rem * var(--density-scale, 1));
+  border-radius: 2px;
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.95em * var(--density-scale, 1));
+  color: var(--text);
+}
+.snippet-reference .ref-footer {
+  color: var(--muted);
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  padding-top: calc(0.35rem * var(--density-scale, 1));
+  border-top: 1px solid var(--border);
+  margin-top: calc(0.35rem * var(--density-scale, 1));
+}
+.snippet-reference .ref-footer a { color: var(--accent); }
+.snippet-reference .ref-footer ul {
+  list-style: disc;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0 0 calc(1.1rem * var(--density-scale, 1));
+  margin: calc(0.15rem * var(--density-scale, 1)) 0 0 0;
+}
+.snippet-reference .ref-footer li { margin: calc(0.1rem * var(--density-scale, 1)) 0; }
+@media (max-width: 820px) {
+  .snippet-editor-row { grid-template-columns: 1fr; }
+  .snippet-reference { max-height: 12rem; }
+}
+dialog input:focus, dialog textarea:focus { border-color: var(--accent); }
+dialog menu {
+  display: flex;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  justify-content: flex-end;
+  margin: calc(0.5rem * var(--density-scale, 1)) 0 0 0;
+  padding: 0;
+}
+#chain-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  min-height: 2.5em;
+  background: var(--bg);
+}
+#chain-steps li {
+  display: flex;
+  align-items: center;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  border-bottom: 1px solid var(--border);
+}
+#chain-steps li:last-child { border-bottom: none; }
+#chain-steps li[draggable="true"] { cursor: grab; }
+#chain-steps li.dragging { cursor: grabbing; opacity: 0.4; }
+#chain-steps li.drag-over { background: var(--btn-bg-hover); }
+#chain-steps li .name { flex: 1; font-family: monospace; font-size: calc(0.9rem * var(--density-scale, 1)); }
+#chain-steps li.step-disabled { opacity: 0.55; }
+#chain-steps li.step-disabled .name {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+#chain-steps li [data-act="toggle"][aria-pressed="true"] { color: var(--muted); }
+#chain-steps .empty { padding: calc(0.4rem * var(--density-scale, 1)); color: var(--muted); font-size: calc(0.85rem * var(--density-scale, 1)); }
+#chain-snippet-filter {
+  /* Full-width inside the `.filter-field` wrapper so the absolutely-positioned
+     `.filter-clear` × lands flush with the input's right edge rather than at
+     the right edge of the (block-level) wrapper. Matches the templates-filter
+     layout in the snippet / inline-step dialogs. */
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  border-radius: 3px;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  font-family: inherit;
+  outline: none;
+  margin-bottom: calc(0.25rem * var(--density-scale, 1));
+}
+#chain-snippet-filter:focus { border-color: var(--accent); }
+#chain-snippet-picker {
+  display: flex;
+  gap: calc(0.25rem * var(--density-scale, 1));
+  flex-wrap: wrap;
+  padding: calc(0.35rem * var(--density-scale, 1));
+  height: 8rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  align-content: flex-start;
+}
+#chain-snippet-picker button { font-family: monospace; }
+#chain-snippet-picker .empty {
+  color: var(--muted);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  padding: calc(0.1rem * var(--density-scale, 1)) calc(0.25rem * var(--density-scale, 1));
+}
+/* "Set variables" prompt. Resizable so a user can stretch the dialog when a
+   variable value is long; width cascades down through the form → list →
+   flex param-row, and `.param-row input` already has `flex: 1`. */
+#run-vars-dialog {
+  resize: both;
+  overflow: auto;
+  width: 480px;
+  min-width: 320px;
+  min-height: 180px;
+}
+#run-vars-dialog > form { min-width: 0; }
+#run-vars-list { min-width: 0; }
+
+.params-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.25rem * var(--density-scale, 1));
+}
+.param-row {
+  display: flex;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  align-items: center;
+}
+.param-row input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: calc(0.25rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  border-radius: 3px;
+  font-family: var(--editor-font-family, 'SF Mono', monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  outline: none;
+}
+.param-row input:focus { border-color: var(--accent); }
+.param-row .param-rm {
+  flex: 0 0 auto;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+}
+/* Run-vars dialog: rows pre-resolved from defaults start hidden when the
+   "accept defaults" setting is on. Revealed by the Show-all button below. */
+.run-vars-row-hidden { display: none; }
+.run-vars-show-all {
+  align-self: flex-start;
+  margin-top: calc(0.4rem * var(--density-scale, 1));
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  padding: calc(0.25rem * var(--density-scale, 1)) calc(0.55rem * var(--density-scale, 1));
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: calc(0.78rem * var(--density-scale, 1));
+}
+.run-vars-show-all:hover { color: var(--text); border-color: var(--accent); }
+.add-param-btn {
+  align-self: flex-start;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+}
+.label-text code {
+  background: var(--bg);
+  padding: 0 calc(0.25rem * var(--density-scale, 1));
+  border-radius: 2px;
+  color: var(--text);
+  font-size: calc(0.85em * var(--density-scale, 1));
+}
+
+#pipeline-vars { margin: 0 0 calc(0.5rem * var(--density-scale, 1)) 0; }
+#pipeline-vars:empty { display: none; }
+.pipeline-vars-head {
+  color: var(--muted);
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: calc(0.3rem * var(--density-scale, 1));
+}
+.pipeline-vars-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  max-width: 40rem;
+}
+
+/* Chain dialog's "+ Add inline step" button — sits below the snippet
+   picker and opens the inline-step sub-dialog, matching the edit path. */
+.add-inline-btn {
+  align-self: flex-start;
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.55rem * var(--density-scale, 1));
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+
+/* Chain dialog Variables section — surfaces the union of step-declared
+   params so the user can pre-fill chain-level defaults. Empty rows fall
+   back to the step's own default at run time, or trigger a single prompt
+   covering everything still unresolved. */
+/* Collapsible "Add step" section in the chain dialog. */
+.chain-add-step-section { margin-top: calc(0.25rem * var(--density-scale, 1)); }
+.chain-add-step-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0;
+  user-select: none;
+}
+.chain-add-step-summary:hover { color: var(--text); }
+.chain-add-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.4rem * var(--density-scale, 1));
+  margin-top: calc(0.35rem * var(--density-scale, 1));
+}
+
+/* Collapsible "Set variables" section in the chain dialog. */
+.chain-vars-section { margin-top: calc(0.25rem * var(--density-scale, 1)); }
+.chain-vars-section-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0;
+  user-select: none;
+}
+.chain-vars-section-summary:hover { color: var(--text); }
+.chain-vars-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  margin-left: calc(0.4rem * var(--density-scale, 1));
+}
+.chain-vars-section-body { display: flex; flex-direction: column; gap: calc(0.3rem * var(--density-scale, 1)); margin-top: calc(0.35rem * var(--density-scale, 1)); }
+.chain-vars-hint { font-size: calc(0.8rem * var(--density-scale, 1)); }
+.chain-vars-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(0.3rem * var(--density-scale, 1)); }
+.chain-var-row {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.25rem * var(--density-scale, 1));
+}
+.chain-var-head {
+  display: grid;
+  grid-template-columns: minmax(8em, max-content) 1fr auto;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  align-items: center;
+}
+.chain-var-row .name {
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  color: var(--text);
+}
+.chain-var-row input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.4rem * var(--density-scale, 1));
+  font-family: inherit;
+  font-size: calc(0.85rem * var(--density-scale, 1));
+}
+.chain-var-row input:focus { border-color: var(--accent); outline: none; }
+
+/* Per-step-override toggle — only shown for names used by 2+ steps.
+   aria-expanded=true when the sub-list of per-step inputs is open. */
+.chain-var-perstep-toggle {
+  background: var(--btn-bg);
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: calc(0.15rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  font-size: calc(0.7rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+.chain-var-perstep-toggle:hover { background: var(--btn-bg-hover); color: var(--text); }
+.chain-var-perstep-toggle[aria-expanded='true'] {
+  background: var(--accent-dim);
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+/* Sub-list of per-step inputs, shown when the toggle is expanded.
+   Indented under the chain-level row so the hierarchy is visible. */
+.chain-var-perstep-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 calc(1rem * var(--density-scale, 1));
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.2rem * var(--density-scale, 1));
+  border-left: 2px solid var(--border);
+}
+.chain-var-perstep-row {
+  display: grid;
+  grid-template-columns: minmax(10em, max-content) 1fr;
+  gap: calc(0.5rem * var(--density-scale, 1));
+  align-items: center;
+  padding-left: calc(0.5rem * var(--density-scale, 1));
+}
+.chain-var-perstep-label {
+  font-size: calc(0.75rem * var(--density-scale, 1));
+}
+.chain-vars-empty { font-size: calc(0.8rem * var(--density-scale, 1)); padding: calc(0.2rem * var(--density-scale, 1)) 0; }
+.chain-vars-list:not(:empty) + .chain-vars-empty { display: none; }
+
+/* Shared preview pane — used by the inline-step dialog (runs preceding
+   chain/pipeline steps then the current program) and the chain dialog
+   (runs the whole chain). Visually matches the palette preview. */
+.dialog-preview {
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.35rem * var(--density-scale, 1));
+}
+details.dialog-preview { margin-top: calc(0.25rem * var(--density-scale, 1)); }
+.dialog-preview-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: calc(0.1rem * var(--density-scale, 1)) 0;
+  user-select: none;
+}
+.dialog-preview-summary:hover { color: var(--text); }
+details.dialog-preview[open] > .dialog-preview-summary { color: var(--text); }
+.snippet-metadata-section { margin-top: calc(0.25rem * var(--density-scale, 1)); }
+.snippet-params-section { margin-top: calc(0.25rem * var(--density-scale, 1)); }
+.snippet-params-hint {
+  font-size: calc(0.75rem * var(--density-scale, 1));
+  margin-bottom: calc(0.15rem * var(--density-scale, 1));
+}
+.dialog-preview-toggle {
+  /* Override `dialog label { flex-direction: column }`. */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: calc(0.3rem * var(--density-scale, 1));
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  color: var(--muted);
+  align-self: flex-start;
+  cursor: pointer;
+  user-select: none;
+}
+.dialog-preview-toggle input { margin: 0; }
+.dialog-preview-toggle:has(input:checked) { color: var(--text); }
+#inline-step-preview-meta,
+#chain-preview-meta,
+#snippet-preview-meta { font-size: calc(0.75rem * var(--density-scale, 1)); }
+#inline-step-preview-meta:not(:empty)::before,
+#chain-preview-meta:not(:empty)::before,
+#snippet-preview-meta:not(:empty)::before { content: '— '; }
+#inline-step-preview-output,
+#chain-preview-output,
+#snippet-preview-output {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: calc(0.4rem * var(--density-scale, 1)) calc(0.5rem * var(--density-scale, 1));
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  font-family: var(--editor-font-family, 'SF Mono', Monaco, Consolas, monospace);
+  font-size: calc(0.8rem * var(--density-scale, 1));
+  line-height: 1.4;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+#inline-step-preview-output.error,
+#chain-preview-output.error,
+#snippet-preview-output.error { color: var(--danger); }
+
+/* Safety: unsafe-mode banner + manual-preview prompt */
+.unsafe-mode-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(0.75rem * var(--density-scale, 1));
+  padding: calc(0.5rem * var(--density-scale, 1)) calc(1rem * var(--density-scale, 1));
+  background: var(--banner-bg, #4a1d1d);
+  color: var(--banner-text, #ffd7d0);
+  border-bottom: 1px solid var(--danger);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  line-height: 1.4;
+}
+/* `display: flex` above outranks the UA's `[hidden] { display: none }`,
+   so we have to reinstate the hide explicitly — otherwise the X button's
+   `banner.hidden = true` leaves the banner visible. */
+.unsafe-mode-banner[hidden] { display: none; }
+.unsafe-mode-banner-text { flex: 1; min-width: 0; }
+.unsafe-mode-banner strong { color: #ffb5a5; }
+.unsafe-mode-banner-close {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.75;
+  cursor: pointer;
+  font-size: calc(1.1rem * var(--density-scale, 1));
+  line-height: 1;
+  padding: 0 calc(0.25rem * var(--density-scale, 1));
+}
+.unsafe-mode-banner-close:hover { opacity: 1; }
+.unsafe-mode-banner-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.unsafe-mode-banner-link:hover { color: var(--banner-link-hover, #ffb5a5); }
+.unsafe-mode-banner strong { color: var(--banner-strong-text, inherit); }
+.preview-manual-msg {
+  margin-bottom: calc(0.5rem * var(--density-scale, 1));
+  font-style: italic;
+}
+.preview-manual-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(0.5rem * var(--density-scale, 1));
+}
+.preview-manual-btn {
+  padding: calc(0.25rem * var(--density-scale, 1)) calc(0.75rem * var(--density-scale, 1));
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  cursor: pointer;
+}
+/* "Change setting" trailing the "Run preview" button — right-aligned
+   via margin-left:auto so it sits parallel at the far edge of the
+   actions row. Dimmer than Run preview (which is the primary action):
+   transparent background, muted text, faint border only on hover. */
+.preview-manual-change {
+  margin-left: auto;
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+}
+.preview-manual-change:hover {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+  text-decoration: underline;
+}
+
+/* Inline "Change setting" link appended to stderr panes when the error
+   is a safety-block. Many of those panes are <pre> elements, so force
+   a block layout and reset the font back to the UI font so the
+   button's label doesn't pick up monospace. */
+.safety-blocked-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: calc(0.5rem * var(--density-scale, 1));
+  font-family: inherit;
+}
+.safety-blocked-change {
+  font-family: inherit;
+  /* `.preview-manual-change` uses margin-left:auto to push itself to
+     the right inside the auto-preview action row; here the parent
+     already justifies to flex-end, so the auto margin is redundant.
+     Resetting keeps the button flush-right regardless of the parent's
+     flex config. */
+  margin-left: 0;
+}
+/* Briefly flashes a settings fieldset when the dialog is opened with an
+   explicit scrollTo target — currently used by the forbidden-pattern
+   toast's "Open safety settings" action. */
+.settings-section-flash {
+  animation: settings-section-flash 1.5s ease-out;
+}
+@keyframes settings-section-flash {
+  0%, 100% { box-shadow: none; }
+  25%      { box-shadow: 0 0 0 3px var(--danger); }
+}
+
+/* Briefly highlight a setting chunk the search filter just matched, so
+   the user's eye lands on the actual row inside a fieldset we've left
+   fully expanded. Keeps the layout untouched (outline instead of border,
+   background fade instead of margin shift) so the flash can't reflow the
+   list during rapid typing. The chunk's first element carries the class;
+   see settings.js > applyFilter. */
+.settings-match-flash {
+  animation: settings-match-flash 1s ease-out;
+  border-radius: 3px;
+}
+@keyframes settings-match-flash {
+  0%   { background: var(--accent-dim); outline: 2px solid var(--accent); }
+  60%  { background: var(--accent-dim); outline: 2px solid var(--accent); }
+  100% { background: transparent; outline: 2px solid transparent; }
+}
+
+/* Lightweight popover menu — see core.js > appContextMenu. Position is set
+   inline (fixed viewport coords after clamping), everything else lives here. */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  padding: calc(0.25rem * var(--density-scale, 1)) 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: calc(0.85rem * var(--density-scale, 1));
+  user-select: none;
+}
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: calc(0.3rem * var(--density-scale, 1)) calc(0.9rem * var(--density-scale, 1));
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.context-menu-item:focus,
+.context-menu-item:hover:not(:disabled) {
+  background: var(--panel-2);
+  outline: none;
+}
+.context-menu-item:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.context-menu-item.danger { color: #e07b7b; }
+.context-menu-separator {
+  height: 1px;
+  margin: calc(0.25rem * var(--density-scale, 1)) 0;
+  background: var(--border);
+}
+
+/* Toggled by Settings → UI / Layout → "Hide non-POSIX feature buttons"
+   to remove the FIELDWIDTHS / FPAT picker buttons from the palette,
+   snippet editor, and inline pipeline step editor in one shot. */
+body.hide-gawk-buttons .gawk-only-btn { display: none; }
+/* Settings → UI / Layout → "Hide Format button" pulls the `gawk
+   --pretty-print` action. Orthogonal to hide-gawk-buttons: formatting
+   doesn't inject gawk-only syntax, so the two toggles are independent. */
+body.hide-format-button .format-btn { display: none; }
+
+/* ---------- Columns picker (FIELDWIDTHS) ---------- */
+#columns-dialog {
+  resize: both;
+  overflow: auto;
+  width: 760px;
+  min-width: 560px;
+  min-height: 420px;
+  max-width: 95vw;
+  max-height: 90vh;
+}
+#columns-dialog form { min-width: 0; width: 100%; }
+#columns-dialog .cp-hint { margin: 0 0 calc(10px * var(--density-scale, 1)); font-size: calc(12px * var(--density-scale, 1)); }
+#columns-dialog .cp-empty {
+  margin: calc(10px * var(--density-scale, 1)) 0;
+  padding: calc(10px * var(--density-scale, 1));
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  font-size: calc(13px * var(--density-scale, 1));
+}
+#columns-dialog .cp-sample-wrap {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(13px * var(--density-scale, 1));
+  line-height: 1.5;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: calc(6px * var(--density-scale, 1));
+  background: var(--panel);
+  user-select: none;
+  white-space: nowrap;
+}
+#columns-dialog .cp-ruler-labels,
+#columns-dialog .cp-ruler,
+#columns-dialog .cp-line { white-space: pre; display: block; }
+#columns-dialog .cp-ruler-labels {
+  color: var(--muted);
+  line-height: 1.2;
+  pointer-events: none;
+  user-select: none;
+}
+#columns-dialog .cp-cell,
+#columns-dialog .cp-char {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+  vertical-align: baseline;
+}
+#columns-dialog .cp-cell {
+  cursor: pointer;
+  color: var(--muted);
+}
+#columns-dialog .cp-cell:hover { background: var(--panel-2); color: var(--text); }
+#columns-dialog .cp-cell.cp-cell-5 { color: var(--text); }
+#columns-dialog .cp-cell.cp-cell-10 { color: var(--text); font-weight: bold; }
+#columns-dialog .cp-cell.cp-boundary {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: bold;
+  border-radius: 2px;
+}
+#columns-dialog .cp-char { cursor: pointer; }
+#columns-dialog .cp-char:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+#columns-dialog .cp-char.cp-field-0 { background: var(--cp-field-0, rgba(86, 156, 214, 0.12)); }
+#columns-dialog .cp-char.cp-field-1 { background: var(--cp-field-1, rgba(206, 145, 120, 0.14)); }
+#columns-dialog .cp-char.cp-field-2 { background: var(--cp-field-2, rgba(181, 206, 168, 0.16)); }
+#columns-dialog .cp-char.cp-field-3 { background: var(--cp-field-3, rgba(220, 220, 170, 0.14)); }
+#columns-dialog .cp-char.cp-field-4 { background: var(--cp-field-4, rgba(197, 134, 192, 0.14)); }
+#columns-dialog .cp-char.cp-field-5 { background: var(--cp-field-5, rgba(78, 201, 176, 0.14)); }
+#columns-dialog .cp-char.cp-at-boundary { box-shadow: inset 2px 0 0 var(--accent); }
+#columns-dialog .cp-controls {
+  display: flex;
+  gap: calc(10px * var(--density-scale, 1));
+  align-items: center;
+  margin: calc(10px * var(--density-scale, 1)) 0;
+  flex-wrap: wrap;
+}
+#columns-dialog .cp-checkbox {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: calc(6px * var(--density-scale, 1));
+  font-size: calc(13px * var(--density-scale, 1));
+  cursor: pointer;
+}
+#columns-dialog .cp-checkbox code {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+#columns-dialog .cp-widen {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--density-scale, 1));
+  font-size: calc(13px * var(--density-scale, 1));
+  margin-left: auto;
+}
+#columns-dialog .cp-widen input[type="number"] {
+  width: 4em;
+  padding: calc(2px * var(--density-scale, 1)) calc(4px * var(--density-scale, 1));
+  font-size: calc(13px * var(--density-scale, 1));
+}
+#columns-dialog .cp-widen button {
+  padding: calc(2px * var(--density-scale, 1)) calc(10px * var(--density-scale, 1));
+  font-weight: bold;
+}
+#columns-dialog .cp-readout {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(13px * var(--density-scale, 1));
+  padding: calc(8px * var(--density-scale, 1)) calc(10px * var(--density-scale, 1));
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  margin-bottom: calc(10px * var(--density-scale, 1));
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+/* ---------- FPAT picker ---------- */
+#fpat-dialog {
+  resize: both;
+  overflow: auto;
+  width: 760px;
+  min-width: 560px;
+  min-height: 460px;
+  max-width: 95vw;
+  max-height: 90vh;
+}
+#fpat-dialog form { min-width: 0; width: 100%; }
+#fpat-dialog .fp-hint { margin: 0 0 calc(10px * var(--density-scale, 1)); font-size: calc(12px * var(--density-scale, 1)); }
+#fpat-dialog .fp-empty {
+  margin: calc(10px * var(--density-scale, 1)) 0;
+  padding: calc(10px * var(--density-scale, 1));
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  font-size: calc(13px * var(--density-scale, 1));
+}
+#fpat-dialog .fp-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: calc(8px * var(--density-scale, 1));
+  margin: calc(6px * var(--density-scale, 1)) 0;
+}
+#fpat-dialog .fp-label {
+  flex: 0 0 70px;
+  font-size: calc(12px * var(--density-scale, 1));
+  color: var(--muted);
+}
+#fpat-dialog #fp-preset { flex: 1; }
+#fpat-dialog #fp-regex {
+  flex: 1;
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(13px * var(--density-scale, 1));
+}
+#fpat-dialog .fp-preset-desc {
+  font-size: calc(12px * var(--density-scale, 1));
+  margin: 0 0 calc(6px * var(--density-scale, 1)) calc(78px * var(--density-scale, 1));
+  min-height: 1.4em;
+}
+#fpat-dialog .fp-preview-wrap {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  padding: calc(6px * var(--density-scale, 1));
+  margin: calc(8px * var(--density-scale, 1)) 0;
+  overflow: auto;
+  max-height: 360px;
+}
+#fpat-dialog .fp-preview-meta { font-size: calc(12px * var(--density-scale, 1)); padding: 0 calc(2px * var(--density-scale, 1)) calc(6px * var(--density-scale, 1)); }
+#fpat-dialog .fp-preview {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(13px * var(--density-scale, 1));
+  line-height: 1.5;
+  white-space: pre;
+}
+#fpat-dialog .fp-line { display: block; }
+#fpat-dialog .fp-field { padding: 0 calc(1px * var(--density-scale, 1)); border-radius: 2px; }
+#fpat-dialog .fp-field-0 { background: var(--fp-field-0, rgba(86, 156, 214, 0.22)); }
+#fpat-dialog .fp-field-1 { background: var(--fp-field-1, rgba(206, 145, 120, 0.24)); }
+#fpat-dialog .fp-field-2 { background: var(--fp-field-2, rgba(181, 206, 168, 0.26)); }
+#fpat-dialog .fp-field-3 { background: var(--fp-field-3, rgba(220, 220, 170, 0.24)); }
+#fpat-dialog .fp-field-4 { background: var(--fp-field-4, rgba(197, 134, 192, 0.24)); }
+#fpat-dialog .fp-field-5 { background: var(--fp-field-5, rgba(78, 201, 176, 0.24)); }
+#fpat-dialog .fp-gap { color: var(--muted); }
+#fpat-dialog .fp-readout {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(13px * var(--density-scale, 1));
+  padding: calc(8px * var(--density-scale, 1)) calc(10px * var(--density-scale, 1));
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  margin-bottom: calc(10px * var(--density-scale, 1));
+  white-space: nowrap;
+  overflow-x: auto;
+}
+#fpat-dialog .fp-mismatch { color: var(--danger); }
+
+/* ---------- strftime picker ---------- */
+#strftime-dialog {
+  resize: both;
+  overflow: auto;
+  width: 720px;
+  min-width: 560px;
+  min-height: 420px;
+  max-width: 95vw;
+  max-height: 90vh;
+}
+#strftime-dialog form { min-width: 0; width: 100%; }
+#strftime-dialog .sf-hint { margin: 0 0 calc(10px * var(--density-scale, 1)); font-size: calc(12px * var(--density-scale, 1)); }
+#strftime-dialog .sf-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: calc(8px * var(--density-scale, 1));
+  margin: calc(6px * var(--density-scale, 1)) 0;
+}
+#strftime-dialog .sf-label {
+  flex: 0 0 70px;
+  font-size: calc(12px * var(--density-scale, 1));
+  color: var(--muted);
+}
+#strftime-dialog #sf-preset { flex: 1; }
+#strftime-dialog #sf-format {
+  flex: 1;
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(13px * var(--density-scale, 1));
+}
+#strftime-dialog .sf-preset-desc {
+  font-size: calc(12px * var(--density-scale, 1));
+  margin: 0 0 calc(6px * var(--density-scale, 1)) calc(78px * var(--density-scale, 1));
+  min-height: 1.4em;
+}
+#strftime-dialog .sf-preview-wrap {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  padding: calc(8px * var(--density-scale, 1)) calc(10px * var(--density-scale, 1));
+  margin: calc(8px * var(--density-scale, 1)) 0;
+}
+#strftime-dialog .sf-preview-meta { font-size: calc(12px * var(--density-scale, 1)); margin-bottom: calc(6px * var(--density-scale, 1)); }
+#strftime-dialog .sf-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#strftime-dialog .sf-preview-table th,
+#strftime-dialog .sf-preview-table td {
+  padding: calc(4px * var(--density-scale, 1)) calc(8px * var(--density-scale, 1));
+  text-align: left;
+  vertical-align: top;
+  font-size: calc(13px * var(--density-scale, 1));
+}
+#strftime-dialog .sf-preview-table th {
+  font-weight: normal;
+  color: var(--muted);
+  width: 70px;
+  white-space: nowrap;
+}
+#strftime-dialog .sf-preview-cell {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+}
+#strftime-dialog .sf-sample-note { font-size: calc(11px * var(--density-scale, 1)); }
+#strftime-dialog .sf-cheatsheet {
+  margin: calc(8px * var(--density-scale, 1)) 0;
+  font-size: calc(12px * var(--density-scale, 1));
+}
+#strftime-dialog .sf-cheatsheet > summary {
+  cursor: pointer;
+  color: var(--muted);
+  padding: calc(4px * var(--density-scale, 1)) 0;
+}
+#strftime-dialog .sf-cheatsheet-list {
+  columns: 2;
+  column-gap: calc(24px * var(--density-scale, 1));
+  margin-top: calc(6px * var(--density-scale, 1));
+}
+/* `break-inside: avoid` keeps a single code+description row intact when
+   the browser balances the two columns, so the code never ends up at
+   the bottom of column one with its description stranded on top of
+   column two. */
+#strftime-dialog .sf-cheat-item {
+  display: grid;
+  grid-template-columns: 50px 1fr;
+  column-gap: calc(6px * var(--density-scale, 1));
+  break-inside: avoid;
+  padding: calc(3px * var(--density-scale, 1)) 0;
+  font-size: calc(12px * var(--density-scale, 1));
+  border-bottom: 1px solid var(--border);
+}
+#strftime-dialog .sf-cheat-item code {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(12px * var(--density-scale, 1));
+  white-space: nowrap;
+}
+#strftime-dialog .sf-readout {
+  font-family: var(--editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(13px * var(--density-scale, 1));
+  padding: calc(8px * var(--density-scale, 1)) calc(10px * var(--density-scale, 1));
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  margin-bottom: calc(10px * var(--density-scale, 1));
+  white-space: nowrap;
+  overflow-x: auto;
+}

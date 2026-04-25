@@ -1,0 +1,41 @@
+/* name: Catppuccin Latte */
+[data-theme="catppuccin-latte"] {
+  --bg: #eff1f5;
+  --panel: #e6e9ef;
+  --panel-2: #ccd0da;
+  --border: #bcc0cc;
+  --text: #4c4f69;
+  --muted: #6c6f85;
+  --accent: #1e66f5;
+  --accent-dim: #a1bef5;
+  --danger: #d20f39;
+  --btn-bg: #e6e9ef;
+  --btn-bg-hover: #ccd0da;
+  --tok-keyword: #8839ef;
+  --tok-builtin: #179299;
+  --tok-var: #1e66f5;
+  --tok-field: #df8e1d;
+  --tok-string: #40a02b;
+  --tok-regex: #fe640b;
+  --tok-comment: #8c8fa1;
+  --tok-number: #fe640b;
+
+  --selection-bg: rgba(30, 102, 245, 0.22);
+  --primary-btn-text: #1e1e2e;
+  --banner-bg: #f2d8d0;
+  --banner-text: #80181e;
+  --banner-link-hover: var(--danger);
+  --banner-strong-text: var(--danger);
+  --cp-field-0: rgba(30, 102, 245, 0.08);
+  --cp-field-1: rgba(254, 100, 11, 0.10);
+  --cp-field-2: rgba(64, 160, 43, 0.10);
+  --cp-field-3: rgba(223, 142, 29, 0.10);
+  --cp-field-4: rgba(136, 57, 239, 0.10);
+  --cp-field-5: rgba(23, 146, 153, 0.10);
+  --fp-field-0: rgba(30, 102, 245, 0.14);
+  --fp-field-1: rgba(254, 100, 11, 0.16);
+  --fp-field-2: rgba(64, 160, 43, 0.16);
+  --fp-field-3: rgba(223, 142, 29, 0.16);
+  --fp-field-4: rgba(136, 57, 239, 0.16);
+  --fp-field-5: rgba(23, 146, 153, 0.16);
+}

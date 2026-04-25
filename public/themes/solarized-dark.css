@@ -1,0 +1,22 @@
+/* name: Solarized Dark */
+[data-theme="solarized-dark"] {
+  --bg: #002b36;
+  --panel: #073642;
+  --panel-2: #094652;
+  --border: #586e75;
+  --text: #93a1a1;
+  --muted: #657b83;
+  --accent: #2aa198;
+  --accent-dim: #094652;
+  --danger: #dc322f;
+  --btn-bg: #073642;
+  --btn-bg-hover: #094652;
+  --tok-keyword: #859900;
+  --tok-builtin: #268bd2;
+  --tok-var: #b58900;
+  --tok-field: #cb4b16;
+  --tok-string: #2aa198;
+  --tok-regex: #d33682;
+  --tok-comment: #586e75;
+  --tok-number: #d33682;
+}

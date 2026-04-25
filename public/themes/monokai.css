@@ -1,0 +1,22 @@
+/* name: Monokai */
+[data-theme="monokai"] {
+  --bg: #272822;
+  --panel: #1e1f1c;
+  --panel-2: #3e3d32;
+  --border: #49483e;
+  --text: #f8f8f2;
+  --muted: #75715e;
+  --accent: #a6e22e;
+  --accent-dim: #3e3d32;
+  --danger: #f92672;
+  --btn-bg: #3e3d32;
+  --btn-bg-hover: #49483e;
+  --tok-keyword: #f92672;
+  --tok-builtin: #66d9ef;
+  --tok-var: #a6e22e;
+  --tok-field: #fd971f;
+  --tok-string: #e6db74;
+  --tok-regex: #f92672;
+  --tok-comment: #75715e;
+  --tok-number: #ae81ff;
+}

@@ -1,0 +1,22 @@
+/* name: GitHub Dark */
+[data-theme="github-dark"] {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-dim: #1f6feb;
+  --danger: #ff7b72;
+  --btn-bg: #21262d;
+  --btn-bg-hover: #30363d;
+  --tok-keyword: #ff7b72;
+  --tok-builtin: #d2a8ff;
+  --tok-var: #79c0ff;
+  --tok-field: #ffa657;
+  --tok-string: #a5d6ff;
+  --tok-regex: #ff7b72;
+  --tok-comment: #8b949e;
+  --tok-number: #79c0ff;
+}
